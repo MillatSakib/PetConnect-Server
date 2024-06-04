@@ -24,13 +24,9 @@ app.use(
 app.use(express.json());
 
 
-
-
-
 // custom middlewares 
 const verifyToken = (req, res, next) => {
     try {
-
         if (!req.cookies) {
             const error = new Error('Unauthorized Access');
             return res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(401).json({ error: error.message });
@@ -47,17 +43,8 @@ const verifyToken = (req, res, next) => {
     }
     catch (errors) {
         return res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(401).send({ message: 'unauthorized access' });
-
     }
-
 }
-
-
-
-
-
-
-
 
 
 // Here I connect the Backend with Database
@@ -79,7 +66,6 @@ app.get('/', (req, res) => {
 })
 
 
-
 const cookieOptions = {
     httpOnly: true,     //Protect to access token using Javascript on client side
     secure: process.env.NODE_ENV === "production",  //If the site are in production then logic return ture and the data will transfer using HTTPS secure protocol. Otherwise the data will go through HTTP protocol.
@@ -87,23 +73,18 @@ const cookieOptions = {
 };
 
 
-
-
-
-
 async function run() {
     try {
-        const userCollection = client.db("petAdoption").collection("users");
 
+
+        const userCollection = client.db("petAdoption").collection("users");
         app.get('/demo', async (req, res) => {
             res.status(200).send("Server Working Perfectly!")
         });
 
 
-
-
-
         //Here server make JWT token when the user are login or register
+        //This is a tamplate. Not used in the frontend
         app.post('/accessToken', async (req, res) => {
             const user = req.body;
             if (user?.uid) {
@@ -134,8 +115,6 @@ async function run() {
         })
 
 
-
-
         const verifyAdmin = async (req, res, next) => {
             const email = req.decoded.email;
             const query = { email: email };
@@ -146,14 +125,6 @@ async function run() {
             }
             next();
         }
-
-
-
-
-
-        app.post('/aa', verifyToken, verifyAdmin, (req, res) => {
-            res.send('Pet is playing.');
-        })
 
 
         //Here All Kind of Corner Case Handeled
@@ -172,12 +143,10 @@ async function run() {
                 if (result1?.acknowledged) {
                     const token = jwt.sign({ email: info.email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '720h' });
                     res.cookie('token', token, cookieOptions).send({ success: true })
-
                 } else {
                     const error = new Error('Unauthorized Access');
                     res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(500).json({ error: error.message });
                 }
-
             }
             else if (!result && pesult) {
                 const error = new Error('Unauthorized Access');
@@ -187,17 +156,11 @@ async function run() {
                 const token = jwt.sign({ email: info.email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '720h' });
                 res.cookie('token', token, cookieOptions).send({ success: true })
             }
-
         })
 
 
-
-
-
     }
-    finally {
-
-    }
+    finally { }
 }
 run().catch(console.dir);
 
