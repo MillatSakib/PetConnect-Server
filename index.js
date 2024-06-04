@@ -5,14 +5,32 @@ const jwt = require('jsonwebtoken');
 require('dotenv').config()
 const port = process.env.PORT || 5000;
 
-// middleware
-app.use(cors());
+// middlewares
+
+app.use(
+    cors({
+        origin: [
+            "http://localhost:5173",
+            "http://localhost:5174",
+            "https://petconnect0.netlify.app"
+        ],
+        credentials: true,
+    })
+);
+
+
+
 app.use(express.json());
 
-const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
+
+
+
+
+// Here I connect the Backend with Database
+
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.lm9a1gh.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
     serverApi: {
         version: ServerApiVersion.v1,
@@ -21,9 +39,23 @@ const client = new MongoClient(uri, {
     }
 });
 
+
+//Sample request response
 app.get('/', (req, res) => {
     res.send('Pet is playing.');
 })
+
+
+
+const cookieOptions = {
+    httpOnly: true,     //Protect to access token using Javascript on client side
+    secure: process.env.NODE_ENV === "production",  //If the site are in production then logic return ture and the data will transfer using HTTPS secure protocol. Otherwise the data will go through HTTP protocol.
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",        //Here as the wite are in production than the cors site essue are raise for different site. That's why set "samesite : none" for production. And when we run in localhost then "samesite : strict" as the ip are same. For this we will not CORS issue.
+};
+
+
+
+
 
 
 async function run() {
@@ -33,6 +65,63 @@ async function run() {
         app.get('/demo', async (req, res) => {
             res.status(200).send("Server Working Perfectly!")
         });
+
+
+
+
+
+        //Here server make JWT token when the user are login or register
+        app.post('/accessToken', async (req, res) => {
+            const user = req.body;
+            if (user?.uid) {
+                //Here check the user are avaiable or not in database using firebase User ID
+                const result = await userCollection.findOne({ uid: user.uid })
+                if (result) {
+                    //Here if the user get then the accesstoken are given
+                    const tokenPerameter = { email: result?.email };
+                    if (email?.role === "admin") {
+                        const token = jwt.sign(tokenPerameter, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
+                        res.cookie('token', token, cookieOptions).send({ success: true });
+                    }
+                    else if (email?.role === "user") {
+                        const token = jwt.sign(tokenPerameter, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '720h' });
+                        res.cookie('token', token, cookieOptions).send({ success: true });
+                    }
+                    else {
+                        const error = new Error('Server Error');
+                        res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(401).json({ error: error.message });
+                    }
+
+                }
+                else {
+                    //If the user are not available then cookie will delete and send Unauthorized
+                    const error = new Error('Unauthorized Access');
+                    res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(500).json({ error: error.message });
+                }
+            }
+        })
+
+
+
+
+
+
+        // middlewares 
+        const verifyToken = (req, res, next) => {
+            // console.log('inside verify token', req.headers.authorization);
+            if (!req.headers.authorization) {
+                return res.status(401).send({ message: 'unauthorized access' });
+            }
+            const token = req.headers.authorization.split(' ')[1];
+            jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+                if (err) {
+                    return res.status(401).send({ message: 'unauthorized access' })
+                }
+                req.decoded = decoded;
+                next();
+            })
+        }
+
     }
     finally {
         // Ensures that the client will close when you finish/error

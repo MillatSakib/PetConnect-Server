@@ -1,4 +1,4 @@
-# Pet Adoption Server
+# PetConnect Server
 
 ## Setup
 
