@@ -30,12 +30,12 @@ app.use(express.json());
 // custom middlewares 
 const verifyToken = (req, res, next) => {
     try {
-        console.log(req.cookies);
+
         if (!req.cookies) {
             const error = new Error('Unauthorized Access');
             return res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(401).json({ error: error.message });
         }
-        const token = req.cookies.split('=')[1];
+        const token = req.cookies.token;
         jwt.verify(token, process.env.Access_Token_Secret, (err, decoded) => {
             if (err) {
                 console.log(err);
@@ -51,6 +51,9 @@ const verifyToken = (req, res, next) => {
     }
 
 }
+
+
+
 
 
 
@@ -113,7 +116,7 @@ async function run() {
                         const token = jwt.sign(tokenPerameter, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
                         res.cookie('token', token, cookieOptions).send({ success: true });
                     }
-                    else if (email?.role === "user") {
+                    else if (result?.role === "user") {
                         const token = jwt.sign(tokenPerameter, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '720h' });
                         res.cookie('token', token, cookieOptions).send({ success: true });
                     }
@@ -133,14 +136,63 @@ async function run() {
 
 
 
+        const verifyAdmin = async (req, res, next) => {
+            const email = req.decoded.email;
+            const query = { email: email };
+            const user = await userCollection.findOne(query);
+            const isAdmin = user?.role === 'admin';
+            if (!isAdmin) {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+            next();
+        }
 
 
 
 
 
-        app.post('/aa', verifyToken, (req, res) => {
+        app.post('/aa', verifyToken, verifyAdmin, (req, res) => {
             res.send('Pet is playing.');
         })
+
+
+        //Here All Kind of Corner Case Handeled
+        app.post("/userSign", async (req, res) => {
+            const info = req.body;
+            const insertInfo = {
+                name: info?.name,
+                uid: info?.uid,
+                email: info.email,
+            }
+            const result = await userCollection.findOne({ uid: insertInfo.uid, email: insertInfo.email });
+            const pesult = await userCollection.findOne({ $or: [{ uid: insertInfo.uid }, { email: insertInfo.email }] })
+            if (!result && !pesult) {
+                insertInfo.role = "user"
+                const result1 = await userCollection.insertOne(insertInfo);
+                if (result1?.acknowledged) {
+                    const token = jwt.sign({ email: info.email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '720h' });
+                    res.cookie('token', token, cookieOptions).send({ success: true })
+
+                } else {
+                    const error = new Error('Unauthorized Access');
+                    res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(500).json({ error: error.message });
+                }
+
+            }
+            else if (!result && pesult) {
+                const error = new Error('Unauthorized Access');
+                res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(500).json({ error: error.message });
+            }
+            else {
+                const token = jwt.sign({ email: info.email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '720h' });
+                res.cookie('token', token, cookieOptions).send({ success: true })
+            }
+
+        })
+
+
+
+
 
     }
     finally {
