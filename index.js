@@ -144,14 +144,15 @@ async function run() {
         //Here All Kind of Corner Case Handeled
         app.post("/userSign", async (req, res) => {
             const info = req.body;
-            if (!info.name || !info.uid || !info.email) {
+            if (!info.name || !info.uid || !info.email || !info.photoURL) {
                 return res.send("Forbidden Access!")
             }
             else {
                 const insertInfo = {
                     name: info.name,
                     uid: info.uid,
-                    email: info.email
+                    email: info.email,
+                    photoURL: info.photoURL
                 }
                 const result = await userCollection.findOne({ uid: insertInfo.uid, email: insertInfo.email });
                 const pesult = await userCollection.findOne({ $or: [{ uid: insertInfo.uid }, { email: insertInfo.email }] })
@@ -301,6 +302,22 @@ async function run() {
                 }
             }
         })
+
+
+        app.get("/allUsers", verifyToken, verifyAdmin, async (req, res) => {
+            {
+                try {
+                    const result = await userCollection.find({}, { projection: { name: 1, email: 1, photoURL: 1 } }).toArray();
+                    res.send(result);
+                }
+                catch (error) {
+                    res.status(500).send("Internal Server Error!");
+                }
+            }
+        })
+
+
+
 
 
 
