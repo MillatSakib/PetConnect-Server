@@ -317,7 +317,30 @@ async function run() {
         })
 
 
+        app.patch("/makeAdmin", verifyToken, verifyAdmin, async (req, res) => {
+            const { email } = req.body;
 
+            try {
+                const result = await userCollection.updateOne({ email: email }, { $set: { role: "admin" } })
+                console.log(result);
+                if (!result.matchedCount) {
+                    res.status(404).send("User Not Found!");
+                }
+                else if (result.acknowledged && result.modifiedCount) {
+                    res.status(200).send("Role Updated Successfully!");
+                }
+                else if (result.acknowledged && !result.modifiedCount) {
+                    res.status(200).send("This person are already admin!");
+                }
+                else {
+                    res.status(500).send("Unknown Error Occured!");
+                }
+            }
+            catch (error) {
+                res.status(500).send("Intrnal Server Error");
+            }
+
+        })
 
 
 
