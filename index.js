@@ -66,6 +66,18 @@ app.get('/', (req, res) => {
 })
 
 
+// Reusable code
+
+const jwtEmail = (token) => {
+    try {
+        const decoded = jwt.verify(token.token, process.env.Access_Token_Secret);
+        return decoded.email;
+    } catch (error) {
+        return null;
+    }
+}
+
+
 const cookieOptions = {
     httpOnly: true,     //Protect to access token using Javascript on client side
     secure: process.env.NODE_ENV === "production",  //If the site are in production then logic return ture and the data will transfer using HTTPS secure protocol. Otherwise the data will go through HTTP protocol.
@@ -78,6 +90,8 @@ async function run() {
 
 
         const userCollection = client.db("petAdoption").collection("users");
+        const petCollection = client.db("petAdoption").collection("allPets");
+
         app.get('/demo', async (req, res) => {
             res.status(200).send("Server Working Perfectly!")
         });
@@ -86,6 +100,7 @@ async function run() {
         //Here server make JWT token when the user are login or register
         //This is a tamplate. Not used in the frontend
         app.post('/accessToken', async (req, res) => {
+            console.log(process.env.DB_USER, process.env.DB_Pass);
             const user = req.body;
             if (user?.uid) {
                 //Here check the user are avaiable or not in database using firebase User ID
@@ -94,11 +109,11 @@ async function run() {
                     //Here if the user get then the accesstoken are given
                     const tokenPerameter = { email: result?.email };
                     if (result?.role === "admin") {
-                        const token = jwt.sign(tokenPerameter, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
+                        const token = jwt.sign(tokenPerameter, process.env.Access_Token_Secret, { expiresIn: '1h' });
                         res.cookie('token', token, cookieOptions).send({ success: true });
                     }
                     else if (result?.role === "user") {
-                        const token = jwt.sign(tokenPerameter, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '720h' });
+                        const token = jwt.sign(tokenPerameter, process.env.Access_Token_Secret, { expiresIn: '720h' });
                         res.cookie('token', token, cookieOptions).send({ success: true });
                     }
                     else {
@@ -141,20 +156,48 @@ async function run() {
                 insertInfo.role = "user"
                 const result1 = await userCollection.insertOne(insertInfo);
                 if (result1?.acknowledged) {
-                    const token = jwt.sign({ email: info.email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '720h' });
+                    const token = jwt.sign({ email: info.email }, process.env.Access_Token_Secret, { expiresIn: '720h' });
                     res.cookie('token', token, cookieOptions).send({ success: true })
                 } else {
                     const error = new Error('Unauthorized Access');
-                    res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(500).json({ error: error.message });
+                    return res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(500).json({ error: error.message });
                 }
             }
             else if (!result && pesult) {
                 const error = new Error('Unauthorized Access');
-                res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(500).json({ error: error.message });
+                return res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(500).json({ error: error.message });
             }
             else {
-                const token = jwt.sign({ email: info.email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '720h' });
-                res.cookie('token', token, cookieOptions).send({ success: true })
+                const token = jwt.sign({ email: info.email }, process.env.Access_Token_Secret, { expiresIn: '720h' });
+                return res.cookie('token', token, cookieOptions).send({ success: true })
+            }
+        })
+
+
+        app.post("/addPet", verifyToken, async (req, res) => {
+            const email = jwtEmail(req.cookies);
+            if (!email) {
+                const error = new Error('Unauthorized Access');
+                return res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(500).json({ error: error.message });
+            }
+            const { petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time, adopted } = req.body;
+            if (!petImgURL || !petName || !petAge || !petCategory || !petLocation || !shortDescription || !longDescription || !time || !email || adopted) {
+                return res.status(400).json({ error: 'Please fillup all the input correctly!' });
+            }
+            else {
+                try {
+                    const petInfo = { petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time, adopted: false, email }
+                    const result = await petCollection.insertOne(petInfo);
+                    if (result.acknowledged) {
+                        res.status(201).send("Pet Added Successfully!");
+                    }
+                    else {
+                        return res.status(500).json({ error: "Internal error occured" })
+                    }
+                }
+                catch (error) {
+                    return res.status(500).json({ error: "Server Error" })
+                }
             }
         })
 
@@ -163,8 +206,6 @@ async function run() {
     finally { }
 }
 run().catch(console.dir);
-
-
 
 app.listen(port, () => {
     console.log(`Pet is playing on port ${port}`);
