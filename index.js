@@ -201,7 +201,7 @@ async function run() {
         app.get("/myAddedPets", verifyToken, async (req, res) => {
             const email = jwtEmail(req.cookies);
             try {
-                const result = await petCollection.find({ email: email }).toArray();
+                const result = await petCollection.find({ email: email }, { projection: { petName: 1, petCategory: 1, adopted: 1, petImgURL: 1 } }).toArray();
                 res.status(200).send(result)
             }
             catch (error) {
@@ -209,6 +209,26 @@ async function run() {
                 return res.status(500).json({ error: "Server Error" })
             }
         })
+
+
+        app.delete("/myAddedPetsDelete/:id", verifyToken, async (req, res) => {
+            const email = jwtEmail(req.cookies);
+            try {
+                const id = new ObjectId(req.params);
+                const deleteResult = await petCollection.deleteOne({ email: email, _id: new ObjectId(id) });
+                if (deleteResult.deletedCount) {
+                    res.status(200).send("Deleted Successfully!")
+                }
+                else {
+                    res.status(404).json({ error: 'Document not found or user not authorized' });
+                }
+            }
+            catch (error) {
+                console.log("Error Occured: ", error);
+                return res.status(404).json({ error: "Inorrect Id!" })
+            }
+        })
+
 
 
     }
