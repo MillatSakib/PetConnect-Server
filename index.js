@@ -144,31 +144,42 @@ async function run() {
         //Here All Kind of Corner Case Handeled
         app.post("/userSign", async (req, res) => {
             const info = req.body;
-            const insertInfo = {
-                name: info?.name,
-                uid: info?.uid,
-                email: info.email,
+            if (!info.name || !info.uid || !info.email) {
+                return res.send("Forbidden Access!")
             }
-            const result = await userCollection.findOne({ uid: insertInfo.uid, email: insertInfo.email });
-            const pesult = await userCollection.findOne({ $or: [{ uid: insertInfo.uid }, { email: insertInfo.email }] })
-            if (!result && !pesult) {
-                insertInfo.role = "user"
-                const result1 = await userCollection.insertOne(insertInfo);
-                if (result1?.acknowledged) {
-                    const token = jwt.sign({ email: info.email }, process.env.Access_Token_Secret, { expiresIn: '720h' });
-                    res.cookie('token', token, cookieOptions).send({ success: true })
-                } else {
+            else {
+                const insertInfo = {
+                    name: info.name,
+                    uid: info.uid,
+                    email: info.email
+                }
+                const result = await userCollection.findOne({ uid: insertInfo.uid, email: insertInfo.email });
+                const pesult = await userCollection.findOne({ $or: [{ uid: insertInfo.uid }, { email: insertInfo.email }] })
+                if (!result && !pesult) {
+                    insertInfo.role = "user"
+                    const result1 = await userCollection.insertOne(insertInfo);
+                    if (result1?.acknowledged) {
+                        const token = jwt.sign({ email: info.email }, process.env.Access_Token_Secret, { expiresIn: '720h' });
+                        res.cookie('token', token, cookieOptions).send({ success: true })
+                    } else {
+                        const error = new Error('Unauthorized Access');
+                        return res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(500).json({ error: error.message });
+                    }
+                }
+                else if (!result && pesult) {
                     const error = new Error('Unauthorized Access');
                     return res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(500).json({ error: error.message });
                 }
-            }
-            else if (!result && pesult) {
-                const error = new Error('Unauthorized Access');
-                return res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(500).json({ error: error.message });
-            }
-            else {
-                const token = jwt.sign({ email: info.email }, process.env.Access_Token_Secret, { expiresIn: '720h' });
-                return res.cookie('token', token, cookieOptions).send({ success: true })
+                else {
+                    if (info.email === result.email) {
+                        const token = jwt.sign({ email: info.email }, process.env.Access_Token_Secret, { expiresIn: '720h' });
+                        return res.cookie('token', token, cookieOptions).send({ success: true })
+                    }
+                    else {
+                        const error = new Error('Unauthorized Access');
+                        return res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(500).json({ error: error.message });
+                    }
+                }
             }
         })
 
@@ -214,7 +225,7 @@ async function run() {
         app.delete("/myAddedPetsDelete/:id", verifyToken, async (req, res) => {
             const email = jwtEmail(req.cookies);
             try {
-                const id = new ObjectId(req.params);
+                const id = new ObjectId(req.params.id);
                 const deleteResult = await petCollection.deleteOne({ email: email, _id: new ObjectId(id) });
                 if (deleteResult.deletedCount) {
                     res.status(200).send("Deleted Successfully!")
@@ -233,7 +244,7 @@ async function run() {
         app.patch("/adopted/:id", verifyToken, async (req, res) => {
             const email = jwtEmail(req.cookies);
             try {
-                const id = new ObjectId(req.params);
+                const id = new ObjectId(req.params.id);
                 const result = await petCollection.findOne({ email: email, _id: new ObjectId(id) });
                 if (result) {
                     if (result.adopted) {
@@ -259,6 +270,35 @@ async function run() {
             catch (error) {
                 console.log("Error Occured: ", error);
                 return res.status(404).json({ error: "Inorrect Id!" })
+            }
+        })
+
+
+        app.put("/updatePet/:id", verifyToken, async (req, res) => {
+            const email = jwtEmail(req.cookies);
+            if (!email) {
+                return res.status(501).json({ error: "Unauthorize Access" })
+            }
+            const id = new ObjectId(req.params.id);
+            const { petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time, adopted } = req.body;
+            if (!petImgURL || !petName || !petAge || !petCategory || !petLocation || !shortDescription || !longDescription || !time || !email || adopted) {
+                return res.status(400).json({ error: 'Please fillup all the input correctly!' });
+            }
+            else {
+                try {
+                    const petInfo = { petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time, adopted: false, email }
+                    const result = await petCollection.updateOne({ email: email, _id: new ObjectId(id) }, { $set: petInfo });
+                    if (result.acknowledged) {
+                        res.status(201).send("Pet Updated Successfully!");
+                    }
+                    else {
+                        return res.status(500).json({ error: "Internal error occured!" })
+                    }
+                }
+                catch (error) {
+                    console.log("Got Error", error);
+                    return res.status(500).json({ error: "Server Error!" })
+                }
             }
         })
 
