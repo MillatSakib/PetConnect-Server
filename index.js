@@ -230,6 +230,39 @@ async function run() {
         })
 
 
+        app.patch("/adopted/:id", verifyToken, async (req, res) => {
+            const email = jwtEmail(req.cookies);
+            try {
+                const id = new ObjectId(req.params);
+                const result = await petCollection.findOne({ email: email, _id: new ObjectId(id) });
+                if (result) {
+                    if (result.adopted) {
+                        res.status(200).json({ error: 'Pet Adopted' });
+                    }
+                    else {
+                        const petAdoptionResult = await petCollection.updateOne({ email: email, _id: new ObjectId(id) }, { $set: { adopted: true } })
+                        console.log(petAdoptionResult);
+                        if (petAdoptionResult.modifiedCount) {
+                            res.status(200).send("Pet Adopted Successfully!")
+                        }
+                        else {
+                            res.status(404).json({ error: 'Document not found or user not authorized' });
+                        }
+
+                    }
+
+                }
+                else {
+                    res.status(404).json({ error: 'Document not found or user not authorized!' });
+                }
+            }
+            catch (error) {
+                console.log("Error Occured: ", error);
+                return res.status(404).json({ error: "Inorrect Id!" })
+            }
+        })
+
+
 
     }
     finally { }
