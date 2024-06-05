@@ -100,7 +100,6 @@ async function run() {
         //Here server make JWT token when the user are login or register
         //This is a tamplate. Not used in the frontend
         app.post('/accessToken', async (req, res) => {
-            console.log(process.env.DB_USER, process.env.DB_Pass);
             const user = req.body;
             if (user?.uid) {
                 //Here check the user are avaiable or not in database using firebase User ID
@@ -109,7 +108,7 @@ async function run() {
                     //Here if the user get then the accesstoken are given
                     const tokenPerameter = { email: result?.email };
                     if (result?.role === "admin") {
-                        const token = jwt.sign(tokenPerameter, process.env.Access_Token_Secret, { expiresIn: '1h' });
+                        const token = jwt.sign(tokenPerameter, process.env.Access_Token_Secret, { expiresIn: '5h' });
                         res.cookie('token', token, cookieOptions).send({ success: true });
                     }
                     else if (result?.role === "user") {
@@ -176,10 +175,6 @@ async function run() {
 
         app.post("/addPet", verifyToken, async (req, res) => {
             const email = jwtEmail(req.cookies);
-            if (!email) {
-                const error = new Error('Unauthorized Access');
-                return res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(500).json({ error: error.message });
-            }
             const { petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time, adopted } = req.body;
             if (!petImgURL || !petName || !petAge || !petCategory || !petLocation || !shortDescription || !longDescription || !time || !email || adopted) {
                 return res.status(400).json({ error: 'Please fillup all the input correctly!' });
@@ -196,8 +191,22 @@ async function run() {
                     }
                 }
                 catch (error) {
+                    console.log("Got Error", error);
                     return res.status(500).json({ error: "Server Error" })
                 }
+            }
+        })
+
+
+        app.get("/myAddedPets", verifyToken, async (req, res) => {
+            const email = jwtEmail(req.cookies);
+            try {
+                const result = await petCollection.find({ email: email }).toArray();
+                res.status(200).send(result)
+            }
+            catch (error) {
+                console.log("Got Error", error);
+                return res.status(500).json({ error: "Server Error" })
             }
         })
 
