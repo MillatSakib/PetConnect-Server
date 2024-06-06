@@ -524,10 +524,25 @@ async function run() {
                 console.log(error);
                 res.status(500).send("Internal Server Error!");
             }
-
         })
 
-
+        app.get("/viewDonator/:id", verifyToken, async (req, res) => {
+            const email = jwtEmail(req.cookies);
+            const id = req.params.id;
+            try {
+                const result = await donationCampaingCollection.findOne({ _id: new ObjectId(id) });
+                if (result.email === email) {
+                    const message = await donatorCollection.find({ id: new ObjectId(id) }, { projection: { name: 1, donationAmount: 1 } }).toArray();
+                    res.send(message);
+                }
+                else {
+                    res.status(401).send("Unauthorize Access!");
+                }
+            }
+            catch (error) {
+                res.status(500).send("Internal Server Error!");
+            }
+        })
 
 
     }
