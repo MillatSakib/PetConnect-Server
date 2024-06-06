@@ -92,6 +92,7 @@ async function run() {
         const userCollection = client.db("petAdoption").collection("users");
         const petCollection = client.db("petAdoption").collection("allPets");
         const adoptedPetCollection = client.db("petAdoption").collection("adoptedPet");
+        const donationCampaingCollection = client.db("petAdoption").collection("donationCampaign");
 
         app.get('/demo', async (req, res) => {
             res.status(200).send("Server Working Perfectly!")
@@ -397,8 +398,7 @@ async function run() {
                         else {
                             const finaltResult = await adoptedPetCollection.insertOne({ petName, petImgURL, name, phoneNumber, address, petId: id, email });
                             if (finaltResult.acknowledged) {
-                                await petCollection.updateOne({ _id: new ObjectId(id) }, { $set: { adopted: true } })
-                                res.status(200).send("Pet Adopted Successfully!");
+                                res.status(200).send("Adoption Request sent Successfully!");
                             } else {
                                 res.send("Can't Inserted!")
                             }
@@ -408,6 +408,27 @@ async function run() {
             }
             catch (error) {
                 res.status(400).send("Invalid Id!");
+            }
+        })
+
+
+        app.post("/makeDonationCampign", verifyToken, async (req, res) => {
+            const email = jwtEmail(req.cookies);
+            const { petPicture, shortDescription, longDescription, maxDonation, lastDateOfDonation, ceateTime } = req.body;
+            try {
+                if (!petPicture || !shortDescription || !longDescription || !maxDonation || !lastDateOfDonation || !ceateTime) {
+                    res.send(500).send("Please fillup form correctly!");
+                }
+                else {
+                    const result = await donationCampaingCollection.insertOne({ petPicture, shortDescription, longDescription, maxDonation, lastDateOfDonation, ceateTime, email, paused: false });
+                    if (result.acknowledged) {
+                        res.status(201).send("Donation Ceated Successfully!")
+                    }
+                }
+            }
+            catch (error) {
+                // console.log(error);
+                res.status(504).send("Internal Server error!")
             }
         })
 
