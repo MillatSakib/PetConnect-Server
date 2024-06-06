@@ -91,6 +91,7 @@ async function run() {
 
         const userCollection = client.db("petAdoption").collection("users");
         const petCollection = client.db("petAdoption").collection("allPets");
+        const adoptedPetCollection = client.db("petAdoption").collection("adoptedPet");
 
         app.get('/demo', async (req, res) => {
             res.status(200).send("Server Working Perfectly!")
@@ -374,7 +375,41 @@ async function run() {
         })
 
 
-
+        app.post("/petAdoptionUser/:id", verifyToken, async (req, res) => {
+            const email = jwtEmail(req.cookies);
+            const id = req.params.id;
+            const { petName, petImgURL, name, phoneNumber, address } = req.body;
+            try {
+                // const result = awiat petCollection.findOne({ _id: new ObjectId(id) })
+                if (!petName || !petImgURL || !phoneNumber || !address || !name) {
+                    console.log(petName, petImgURL, name, phoneNumber, address);
+                    res.status(500).send("Fillup the form correctly!");
+                }
+                else {
+                    const result = await petCollection.findOne({ _id: new ObjectId(id) });
+                    if (!result) {
+                        res.status(404).send("Sorry Pet not found!");
+                    }
+                    else {
+                        if (result.adopted) {
+                            res.send("Sorry! This pet is adopted by another person!");
+                        }
+                        else {
+                            const finaltResult = await adoptedPetCollection.insertOne({ petName, petImgURL, name, phoneNumber, address, petId: id, email });
+                            if (finaltResult.acknowledged) {
+                                await petCollection.updateOne({ _id: new ObjectId(id) }, { $set: { adopted: true } })
+                                res.status(200).send("Pet Adopted Successfully!");
+                            } else {
+                                res.send("Can't Inserted!")
+                            }
+                        }
+                    }
+                }
+            }
+            catch (error) {
+                res.status(400).send("Invalid Id!");
+            }
+        })
 
 
     }
