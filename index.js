@@ -241,8 +241,8 @@ async function run() {
             }
         })
 
-
-        app.patch("/adopted/:id", verifyToken, async (req, res) => {
+        //This api req can only perform the Pet Owner
+        app.patch("/adoptedByOthers/:id", verifyToken, async (req, res) => {
             const email = jwtEmail(req.cookies);
             try {
                 const id = new ObjectId(req.params.id);
@@ -339,8 +339,29 @@ async function run() {
             catch (error) {
                 res.status(500).send("Intrnal Server Error");
             }
+        })
+
+
+        app.get("/petListing", async (req, res) => {
+            const { timeValue } = req.body;
+            try {
+                if (timeValue) {
+                    const result = await petCollection.find({ adopted: false, time: { $lt: timeValue } }, { projection: { petImgURL: 1, petName: 1, petAge: 1, petLocation: 1, time: 1 } }).sort({ time: -1 }).limit(6).toArray();
+                    res.send(result)
+                }
+                else {
+                    res.status(400).send("Please request correctly!");
+                }
+
+            }
+            catch (error) {
+                console.log(error);
+                res.status(500).send("Intrnal Server Error");
+            }
 
         })
+
+
 
 
 
