@@ -527,9 +527,10 @@ async function run() {
         })
 
         app.get("/viewDonator/:id", verifyToken, async (req, res) => {
-            const email = jwtEmail(req.cookies);
-            const id = req.params.id;
+
             try {
+                const email = jwtEmail(req.cookies);
+                const id = req.params.id;
                 const result = await donationCampaingCollection.findOne({ _id: new ObjectId(id) });
                 if (result.email === email) {
                     const message = await donatorCollection.find({ id: new ObjectId(id) }, { projection: { name: 1, donationAmount: 1 } }).toArray();
@@ -540,6 +541,37 @@ async function run() {
                 }
             }
             catch (error) {
+                res.status(500).send("Internal Server Error!");
+            }
+        })
+
+
+        app.get("/myDonation", verifyToken, async (req, res) => {
+
+            try {
+                const email = jwtEmail(req.cookies);
+                const result = await donatorCollection.find({ donationCampainerEmail: email }, { projection: {} }).toArray();
+                res.send(result);
+            }
+            catch (error) {
+                res.status(500).send("Internal Server Error!");
+            }
+        })
+
+        app.delete("/refundDonation/:id", verifyToken, async (req, res) => {
+            try {
+                const email = jwtEmail(req.cookies);
+                const id = req.params.id;
+                const result = await donatorCollection.deleteOne({ _id: new ObjectId(id), email: email });
+                if (result.deletedCount) {
+                    res.send("Deleted Successfully");
+                }
+                else {
+                    res.status(404).send("User are unauthorize or Data not found!");
+                }
+            }
+            catch (error) {
+                console.log(error);
                 res.status(500).send("Internal Server Error!");
             }
         })
