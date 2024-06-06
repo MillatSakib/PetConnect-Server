@@ -145,7 +145,7 @@ async function run() {
         app.post("/userSign", async (req, res) => {
             const info = req.body;
             if (!info.name || !info.uid || !info.email || !info.photoURL) {
-                return res.send("Forbidden Access!")
+                return res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).send("Forbidden Access!")
             }
             else {
                 const insertInfo = {
@@ -359,6 +359,18 @@ async function run() {
                 res.status(500).send("Intrnal Server Error");
             }
 
+        })
+
+
+        app.get("/petDetails/:id", async (req, res) => {
+            const id = req.params.id
+            try {
+                const result = await petCollection.findOne({ _id: new ObjectId(id) });
+                res.send(result);
+            }
+            catch (error) {
+                res.status(400).send("Invalid Id!")
+            }
         })
 
 
