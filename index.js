@@ -433,20 +433,6 @@ async function run() {
         })
 
 
-        // app.post("/newDonation/:id", verifyToken, async (req, res) => {
-        //     const email = jwtEmail(res.cookie);
-        //     const id = req.params.id;
-        //     try {
-        //         const result = await insertOne({ email, donationCampaignId: id, amount: 454 });
-        //         res.send(result)
-        //     }
-        //     catch (error) {
-        //         res.send({ error })
-        //     }
-
-        // })
-
-
         app.put("/updateDonationCampign/:id", verifyToken, async (req, res) => {
             const email = jwtEmail(req.cookies);
             const id = req.params.id;
@@ -473,6 +459,72 @@ async function run() {
                 console.log(error);
                 res.status(504).send("Internal Server error!")
             }
+        })
+
+
+        // app.post("/fsdafasdfsd", verifyToken, async (req, res) => {
+        //     const aggregationPipeline = [
+        //         {
+        //             $lookup: {
+        //                 from: "donators",
+        //                 localField: "_id",
+        //                 foreignField: "donationCampainId",
+        //                 as: "donators"
+        //             }
+        //         },
+        //         {
+        //             $unwind: "$donators"
+        //         },
+        //         {
+        //             $group: {
+        //                 _id: "$_id", // Group by campaign ID
+        //                 petPicture: { $first: "$petPicture" }, // Include the pet picture from the campaign
+        //                 totalDonationAmount: { $sum: "$donators.donationAmount" }, // Sum of all donation amounts
+        //                 maxDonationAmount: { $max: "$donators.donationAmount" } // Maximum donation amount
+        //             }
+        //         },
+        //         {
+        //             $project: {
+        //                 _id: 0, // Exclude the _id field
+        //                 petPicture: 1,
+        //                 totalDonationAmount: 1,
+        //                 maxDonationAmount: 1
+        //             }
+        //         }
+        //     ];
+
+        //     // Assuming you're using MongoDB Node.js driver
+        //     const donationCampainCollection = db.collection('donationCampain');
+        //     const result = await donationCampainCollection.aggregate(aggregationPipeline).toArray();
+        //     console.log(result);
+
+        // })
+
+
+        app.patch("/donationPause/:id", verifyToken, async (req, res) => {
+            try {
+                const email = jwtEmail(req.cookies);
+                const id = req.params.id;
+                const result = await donationCampaingCollection.findOne({ _id: new ObjectId(id) });
+                if (result.paused) {
+                    res.status(200).send("Already paused");
+                } else {
+                    if (result.email === email) {
+                        const paused = await donationCampaingCollection.updateOne({ _id: new ObjectId(id) }, { $set: { paused: true } });
+                        if (paused.modifiedCount) {
+                            res.status(200).send("Paused Successfully!");
+                        }
+                    }
+                    else {
+                        res.status(401).send("Unauthorize Access!");
+                    }
+                }
+            }
+            catch (error) {
+                console.log(error);
+                res.status(500).send("Internal Server Error!");
+            }
+
         })
 
 
