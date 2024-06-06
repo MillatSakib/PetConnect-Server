@@ -12,8 +12,8 @@ It will install all package and dependency need for your project. But it is not 
 And the structure of the environment file are given below:
 
 ```env
-DB_User="*********"
-DB_Pass="******"
+DB_USER="*********"
+DB_PASS="******"
 Access_Token_Secret=*************************
 ```
 
