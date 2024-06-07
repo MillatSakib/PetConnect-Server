@@ -394,7 +394,7 @@ async function run() {
                 }
             }
             catch {
-                res.status(500).send("Internal Server Error!")
+                res.status(500).send("Internal Server Error!");
             }
         })
 
@@ -403,7 +403,30 @@ async function run() {
             try {
                 const result = await donationCampaingCollection.find({}, { projection: { email: 1, petPicture: 1, maxDonation: 1, ceateTime: 1, lastDateOfDonation: 1 } }).toArray();
                 res.send(result)
+            } catch (error) {
+                res.status(500).send("Internal Server Error!");
             }
+        })
+
+
+        app.get("/donationDelete/:id", verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const id = req.params.id;
+                if (!ObjectId.isValid(id)) {
+                    return res.status(400).send("Invalid ID format");
+                }
+                const result = await donationCampaingCollection.deleteOne({ _id: new ObjectId(id) });
+                if (result?.deletedCount === 1) {
+                    res.send("Donation Campaign Deleted!")
+                }
+                else {
+                    res.status(404).send("Donation Campaign Not Found!");
+                }
+            }
+            catch (error) {
+                res.status(500).send("Internal Server Error!");
+            }
+
         })
 
 
@@ -727,6 +750,9 @@ async function run() {
         })
 
 
+    }
+    catch (error) {
+        console.log(error);
     }
     finally { }
 }
