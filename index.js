@@ -307,14 +307,23 @@ async function run() {
 
 
         app.get("/allUsers", verifyToken, verifyAdmin, async (req, res) => {
-            {
-                try {
-                    const result = await userCollection.find({}, { projection: { name: 1, email: 1, photoURL: 1 } }).toArray();
-                    res.send(result);
-                }
-                catch (error) {
-                    res.status(500).send("Internal Server Error!");
-                }
+            try {
+                const result = await userCollection.find({}, { projection: { name: 1, email: 1, photoURL: 1 } }).toArray();
+                res.send(result);
+            }
+            catch (error) {
+                res.status(500).send("Internal Server Error!");
+            }
+        })
+
+
+        app.get("/allPets", verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const result = await petCollection.find({}, { projection: { petName: 1, petAge: 1, petImgURL: 1, petCategory: 1 } }).toArray();
+                res.send(result);
+            }
+            catch (error) {
+                res.status(500).send("Internal Server Error!");
             }
         })
 
@@ -632,6 +641,7 @@ async function run() {
                 }
             }
         })
+
 
         app.patch("/rejectAdoptionReq/:id", verifyToken, async (req, res) => {
             try {
