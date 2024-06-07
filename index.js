@@ -328,6 +328,29 @@ async function run() {
         })
 
 
+        app.delete("/petDelete/:id", verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const id = req.params.id;
+                if (!ObjectId.isValid(id)) {
+                    return res.status(400).send("Bad Request: Invalid ID format");
+                }
+                const result = await petCollection.deleteOne({ _id: new ObjectId(id) });
+                if (result?.deletedCount === 1) {
+                    res.send("Pet information Deleted successfully!");
+                }
+                else if (result?.deletedCount === 0) {
+                    res.status(404).send("Data Not found!")
+                }
+                else {
+                    res.status(400).send("Bad Request!")
+                }
+            }
+            catch (error) {
+                res.status(500).send("Internal Server Error!");
+            }
+        })
+
+
         app.patch("/makeAdmin", verifyToken, verifyAdmin, async (req, res) => {
             const { email } = req.body;
 
