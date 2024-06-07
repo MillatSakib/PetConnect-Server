@@ -593,17 +593,16 @@ async function run() {
         })
 
 
-        app.get("/acceptAdoptionReq/:id", verifyToken, async (req, res) => {
+        app.patch("/acceptAdoptionReq/:id", verifyToken, async (req, res) => {
             {
                 try {
                     const email = jwtEmail(req.cookies);
                     const id = req.params.id;
                     const adopterId = req.body.adopterId;
-                    const result = await petCollection.findOne({ _id: new ObjectId(id), email: email })
                     if (!ObjectId.isValid(id) || !ObjectId.isValid(adopterId)) {
                         return res.status(400).send("Invalid ID format");
                     }
-
+                    const result = await petCollection.findOne({ _id: new ObjectId(id), email: email })
                     if (result?.adopted === false) {
                         const updatePetAdoptiation = await petCollection.updateOne({ _id: new ObjectId(id) }, { $set: { adopted: true } });
                         if (updatePetAdoptiation?.acknowledged === true) {
@@ -629,9 +628,38 @@ async function run() {
                     }
                 }
                 catch (error) {
-                    console.log(error);
                     res.status(500).send("Internal Server Error!");
                 }
+            }
+        })
+
+        app.patch("/rejectAdoptionReq/:id", verifyToken, async (req, res) => {
+            try {
+                const email = jwtEmail(req.cookies);
+                const id = req.params.id;
+                if (!ObjectId.isValid(id)) {
+                    return res.status(400).send("Invalid ID format");
+                }
+                const result = await adoptionReqCollection.findOne({ _id: new ObjectId(id) });
+                if (result?.rejected === true) {
+                    res.status(409).send("You have already rejected this adoption request!");
+                }
+                else if (result?.rejected === false) {
+                    const updating = await adoptionReqCollection.updateOne({ adoptionPosterEmail: email, _id: new ObjectId(id) }, { $set: { rejected: true } });
+                    if (updating?.modifiedCount === 1) {
+                        res.send("Adoption request rejected Successfully!");
+                    }
+                    else {
+                        res.status(401).send("Unauthorize access!")
+                    }
+
+                }
+                else {
+                    res.status(400).send("Bad Request");
+                }
+            } catch (error) {
+                console.log(error);
+                res.status(500).send("Internal Server Error!");
             }
         })
 
