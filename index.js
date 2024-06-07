@@ -263,7 +263,6 @@ async function run() {
                         else {
                             res.status(404).json({ error: 'Document not found or user not authorized' });
                         }
-
                     }
 
                 }
@@ -402,7 +401,7 @@ async function run() {
                                 res.status(200).send("You have aleady send Adoption Request!");
                             }
                             else {
-                                const finaltResult = await adoptionReqCollection.insertOne({ petName, petImgURL, name, phoneNumber, address, petId: id, email, AdoptionPosterEmail: result.email, accepted: false });
+                                const finaltResult = await adoptionReqCollection.insertOne({ petName, petImgURL, name, phoneNumber, address, petId: id, email, adoptionPosterEmail: result.email, accepted: false, rejected: false });
                                 if (finaltResult.acknowledged) {
                                     res.status(200).send("Adoption Request sent Successfully!");
                                 } else {
@@ -579,6 +578,16 @@ async function run() {
             }
             catch (error) {
                 console.log(error);
+                res.status(500).send("Internal Server Error!");
+            }
+        })
+
+        app.get("/allAdoptionReq", verifyToken, async (req, res) => {
+            try {
+                const email = jwtEmail(req.cookies);
+                const result = await adoptionReqCollection.find({ adoptionPosterEmail: email }, { projection: { petName: 1, petImgURL: 1, name: 1, address: 1, phoneNumber: 1, accepted: 1, rejected: 1 } }).toArray();
+                res.send(result)
+            } catch (error) {
                 res.status(500).send("Internal Server Error!");
             }
         })
