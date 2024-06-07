@@ -91,7 +91,7 @@ async function run() {
 
         const userCollection = client.db("petAdoption").collection("users");
         const petCollection = client.db("petAdoption").collection("allPets");
-        const adoptedPetCollection = client.db("petAdoption").collection("adoptedPet");
+        const adoptionReqCollection = client.db("petAdoption").collection("adoptionReq");
         const donationCampaingCollection = client.db("petAdoption").collection("donationCampaign");
         const donatorCollection = client.db("petAdoption").collection('donator');
 
@@ -397,12 +397,19 @@ async function run() {
                             res.send("Sorry! This pet is adopted by another person!");
                         }
                         else {
-                            const finaltResult = await adoptedPetCollection.insertOne({ petName, petImgURL, name, phoneNumber, address, petId: id, email });
-                            if (finaltResult.acknowledged) {
-                                res.status(200).send("Adoption Request sent Successfully!");
-                            } else {
-                                res.send("Can't Inserted!")
+                            const adoptionReqChk = await adoptionReqCollection.findOne({ petId: id, email: email });
+                            if (adoptionReqChk) {
+                                res.status(200).send("You have aleady send Adoption Request!");
                             }
+                            else {
+                                const finaltResult = await adoptionReqCollection.insertOne({ petName, petImgURL, name, phoneNumber, address, petId: id, email, AdoptionPosterEmail: result.email, accepted: false });
+                                if (finaltResult.acknowledged) {
+                                    res.status(200).send("Adoption Request sent Successfully!");
+                                } else {
+                                    res.send("Can't Inserted!")
+                                }
+                            }
+
                         }
                     }
                 }
