@@ -376,6 +376,29 @@ async function run() {
         })
 
 
+        app.patch("/petAdoptedByAdmin/:id", verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const id = req.params.id;
+                const result = await petCollection.updateOne({ _id: new ObjectId(id) }, { $set: { adopted: true } });
+                if (result?.matchedCount === 1 && result?.modifiedCount === 1) {
+                    res.send("Pet Adopted Successfully!");
+                }
+                else if (result?.matchedCount === 1 && result?.modifiedCount === 0) {
+                    res.status(409).send("Sorry, Pet already adopted!");
+                }
+                else if (result?.matchedCount === 0) {
+                    res.status(404).send("Data not found!")
+                }
+                else {
+                    res.status(500).send("Invalid Query!")
+                }
+            }
+            catch {
+                res.status(500).send("Internal Server Error!")
+            }
+        })
+
+
         app.get("/petListing", async (req, res) => {
             const { timeValue } = req.body;
             try {
@@ -685,7 +708,6 @@ async function run() {
                     else {
                         res.status(401).send("Unauthorize access!")
                     }
-
                 }
                 else {
                     res.status(400).send("Bad Request");
