@@ -593,6 +593,49 @@ async function run() {
         })
 
 
+        app.get("/acceptAdoptionReq/:id", verifyToken, async (req, res) => {
+            {
+                try {
+                    const email = jwtEmail(req.cookies);
+                    const id = req.params.id;
+                    const adopterId = req.body.adopterId;
+                    const result = await petCollection.findOne({ _id: new ObjectId(id), email: email })
+                    if (!ObjectId.isValid(id) || !ObjectId.isValid(adopterId)) {
+                        return res.status(400).send("Invalid ID format");
+                    }
+
+                    if (result?.adopted === false) {
+                        const updatePetAdoptiation = await petCollection.updateOne({ _id: new ObjectId(id) }, { $set: { adopted: true } });
+                        if (updatePetAdoptiation?.acknowledged === true) {
+                            const updateAdopterReq = await adoptionReqCollection.updateOne({ _id: new ObjectId(adopterId), adoptionPosterEmail: email, rejected: false }, { $set: { accepted: true } });
+                            if (updateAdopterReq?.modifiedCount === 1) {
+                                res.send("Adoption Request Accepted!");
+                            }
+                            else if (updateAdopterReq?.modifiedCount === 0) {
+                                adoptionReqCollection.updateOne({ _id: new ObjectId(adopterId) }, { $set: { accepted: false } })
+                                await petCollection.updateOne({ _id: new ObjectId(id) }, { $set: { adopted: false } })
+                                res.status(400).send("Bad Request");
+                            }
+                        }
+                        else {
+                            res.status(500).send("Failed to update pet adoption status");
+                        }
+                    }
+                    else if (result?.adopted === true) {
+                        res.status(409).send("This pet has already been adopted");
+                    }
+                    else {
+                        res.status(404).send("Unauthorise access or Data not found!")
+                    }
+                }
+                catch (error) {
+                    console.log(error);
+                    res.status(500).send("Internal Server Error!");
+                }
+            }
+        })
+
+
     }
     finally { }
 }
