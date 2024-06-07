@@ -399,6 +399,14 @@ async function run() {
         })
 
 
+        app.get("/donationCampaigns", verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const result = await donationCampaingCollection.find({}, { projection: { email: 1, petPicture: 1, maxDonation: 1, ceateTime: 1, lastDateOfDonation: 1 } }).toArray();
+                res.send(result)
+            }
+        })
+
+
         app.get("/petListing", async (req, res) => {
             const { timeValue } = req.body;
             try {
