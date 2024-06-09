@@ -421,8 +421,21 @@ async function run() {
         app.get("/donationDetails/:id", async (req, res) => {
             try {
                 const id = req.params.id;
-                const result = await donationCampaingCollection.findOne({ _id: new ObjectId(id) });
-                res.send(result);
+                const donationCampaign = await donationCampaingCollection.findOne({ _id: new ObjectId(id) });
+                const totalDonationResult = await donatorCollection.aggregate([
+                    {
+                        $match: { id: new ObjectId(id) }
+                    },
+                    {
+                        $group: {
+                            _id: null,
+                            totalDonation: { $sum: "$donationAmount" }
+                        }
+                    }
+                ]).toArray();
+                const totalDonation = totalDonationResult.length > 0 ? totalDonationResult[0].totalDonation : 0;
+                donationCampaign.totalDonation = totalDonation;
+                res.send(donationCampaign);
             } catch (error) {
                 res.status(500).send("Internal Server Error!");
             }
@@ -684,45 +697,6 @@ async function run() {
                 res.status(504).send("Internal Server error!")
             }
         })
-
-
-        // app.post("/fsdafasdfsd", verifyToken, async (req, res) => {
-        //     const aggregationPipeline = [
-        //         {
-        //             $lookup: {
-        //                 from: "donators",
-        //                 localField: "_id",
-        //                 foreignField: "donationCampainId",
-        //                 as: "donators"
-        //             }
-        //         },
-        //         {
-        //             $unwind: "$donators"
-        //         },
-        //         {
-        //             $group: {
-        //                 _id: "$_id", // Group by campaign ID
-        //                 petPicture: { $first: "$petPicture" }, // Include the pet picture from the campaign
-        //                 totalDonationAmount: { $sum: "$donators.donationAmount" }, // Sum of all donation amounts
-        //                 maxDonationAmount: { $max: "$donators.donationAmount" } // Maximum donation amount
-        //             }
-        //         },
-        //         {
-        //             $project: {
-        //                 _id: 0, // Exclude the _id field
-        //                 petPicture: 1,
-        //                 totalDonationAmount: 1,
-        //                 maxDonationAmount: 1
-        //             }
-        //         }
-        //     ];
-
-        //     // Assuming you're using MongoDB Node.js driver
-        //     const donationCampainCollection = db.collection('donationCampain');
-        //     const result = await donationCampainCollection.aggregate(aggregationPipeline).toArray();
-        //     console.log(result);
-
-        // })
 
 
         app.patch("/donationPause/:id", verifyToken, async (req, res) => {
