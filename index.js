@@ -411,12 +411,22 @@ async function run() {
 
         app.get("/donationCampaignsUsers", async (req, res) => {
             try {
-                const result = await donationCampaingCollection.find({}, { projection: { email: 1, name: 1, petPicture: 1, maxDonation: 1, ceateTime: 1, lastDateOfDonation: 1 } }).toArray();
-                res.send(result)
+                const campaigns = await donationCampaingCollection.find({}, { projection: { email: 1, name: 1, petPicture: 1, maxDonation: 1, ceateTime: 1, lastDateOfDonation: 1 } }).toArray();
+                for (let campaign of campaigns) {
+                    const donations = await donatorCollection.find({ id: campaign._id }).toArray();
+                    let totalDonation = 0;
+                    for (let donation of donations) {
+                        totalDonation += donation.donationAmount;
+                    }
+                    campaign.totalDonation = totalDonation;
+                }
+
+                res.send(campaigns);
             } catch (error) {
                 res.status(500).send("Internal Server Error!");
             }
-        })
+        });
+
 
         app.get("/donationDetails/:id", async (req, res) => {
             try {
