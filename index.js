@@ -429,6 +429,22 @@ async function run() {
         })
 
 
+        app.get("/randomDoanation", async (req, res) => {
+            try {
+                const category = req.params.category;
+                const pipeline = [
+                    { $sample: { size: 3 } }
+                ];
+                const results = await donationCampaingCollection.aggregate(pipeline).toArray();
+                res.send(results)
+            } catch (error) {
+                res.status(500).send("Intrnal Server Error");
+            }
+
+
+        })
+
+
         app.get("/donationDelete/:id", verifyToken, verifyAdmin, async (req, res) => {
             try {
                 const id = req.params.id;
