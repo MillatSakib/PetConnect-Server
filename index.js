@@ -189,6 +189,10 @@ async function run() {
         })
 
 
+        app.get("/verifyAdmin", verifyToken, verifyAdmin, (req, res) => {
+            res.send({ message: "have access" })
+        })
+
         app.post("/addPet", verifyToken, async (req, res) => {
             const email = jwtEmail(req.cookies);
             const { petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time, adopted } = req.body;
@@ -596,7 +600,7 @@ async function run() {
             const query = { adopted: false, time: { $lt: timeValue }, ...(category ? { petCategory: category } : {}), ...(regex ? { petName: { $regex: regex } } : {}) }
             try {
                 if (timeValue) {
-                    const result = await petCollection.find(query, { projection: { petImgURL: 1, petName: 1, petAge: 1, petLocation: 1, time: 1 } }).sort({ time: -1 }).limit(6).toArray();
+                    const result = await petCollection.find(query, { projection: { petImgURL: 1, petName: 1, petAge: 1, petLocation: 1, time: 1 } }).sort({ time: -1 }).toArray();
                     res.send(result)
                 }
                 else {
