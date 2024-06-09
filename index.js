@@ -147,7 +147,7 @@ async function run() {
         //Here All Kind of Corner Case Handeled
         app.post("/userSign", async (req, res) => {
             const info = req.body;
-            if (!info.name || !info.uid || !info.email || !info.photoURL) {
+            if (!info.displayName || !info.uid || !info.email || !info.photoURL) {
                 return res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).send("Forbidden Access!")
             }
             else {
@@ -160,6 +160,7 @@ async function run() {
                 const result = await userCollection.findOne({ uid: insertInfo.uid, email: insertInfo.email });
                 const pesult = await userCollection.findOne({ $or: [{ uid: insertInfo.uid }, { email: insertInfo.email }] })
                 if (!result && !pesult) {
+
                     insertInfo.role = "user"
                     const result1 = await userCollection.insertOne(insertInfo);
                     if (result1?.acknowledged) {
@@ -408,6 +409,25 @@ async function run() {
             }
         })
 
+        app.get("/donationCampaignsUsers", async (req, res) => {
+            try {
+                const result = await donationCampaingCollection.find({}, { projection: { email: 1, name: 1, petPicture: 1, maxDonation: 1, ceateTime: 1, lastDateOfDonation: 1 } }).toArray();
+                res.send(result)
+            } catch (error) {
+                res.status(500).send("Internal Server Error!");
+            }
+        })
+
+        app.get("/donationDetails/:id", async (req, res) => {
+            try {
+                const id = req.params.id;
+                const result = await donationCampaingCollection.findOne({ _id: new ObjectId(id) });
+                res.send(result);
+            } catch (error) {
+                res.status(500).send("Internal Server Error!");
+            }
+        })
+
 
         app.get("/donationDelete/:id", verifyToken, verifyAdmin, async (req, res) => {
             try {
@@ -426,15 +446,49 @@ async function run() {
             catch (error) {
                 res.status(500).send("Internal Server Error!");
             }
+        })
 
+        app.put("/editDonationCampign/:id", verifyToken, verifyAdmin, async (req, res) => {
+            const { petPicture, shortDescription, longDescription, maxDonation, lastDateOfDonation, ceateTime } = req.body;
+            try {
+                const id = req.params.id;
+                if (!ObjectId.isValid(id)) {
+                    return res.status(400).send("Invalid ID format");
+                }
+                if (!petPicture || !shortDescription || !longDescription || !maxDonation || !lastDateOfDonation || !ceateTime) {
+                    res.status(500).send("Please fillup form correctly!");
+                }
+                else {
+                    const result = await donationCampaingCollection.updateOne({ _id: new ObjectId(id) }, { $set: { petPicture, shortDescription, longDescription, maxDonation, lastDateOfDonation, ceateTime, paused: false } });
+                    if (result.modifiedCount === 1) {
+                        res.status(201).send("Donation Updated Successfully!")
+                    } else {
+                        res.status(404).send("Data Not Found!");
+                    }
+                }
+            }
+            catch (error) {
+                console.log(error);
+                res.status(504).send("Internal Server error!")
+            }
         })
 
 
-        app.get("/petListing", async (req, res) => {
+        app.post("/petListing", async (req, res) => {
             const { timeValue } = req.body;
+            const { category } = req.body;
+            const { title } = req.body;
+            let regex;
+            if (title) {
+                const searchWord = title.toLowerCase().split(/\s+/);
+                regex = new RegExp(searchWord.join('|'), 'i');
+            } else {
+                regex = "";
+            }
+            const query = { adopted: false, time: { $lt: timeValue }, ...(category ? { petCategory: category } : {}), ...(regex ? { petName: { $regex: regex } } : {}) }
             try {
                 if (timeValue) {
-                    const result = await petCollection.find({ adopted: false, time: { $lt: timeValue } }, { projection: { petImgURL: 1, petName: 1, petAge: 1, petLocation: 1, time: 1 } }).sort({ time: -1 }).limit(6).toArray();
+                    const result = await petCollection.find(query, { projection: { petImgURL: 1, petName: 1, petAge: 1, petLocation: 1, time: 1 } }).sort({ time: -1 }).limit(6).toArray();
                     res.send(result)
                 }
                 else {
@@ -446,6 +500,23 @@ async function run() {
                 console.log(error);
                 res.status(500).send("Intrnal Server Error");
             }
+
+        })
+
+
+        app.get("/randomPet/:category", async (req, res) => {
+            try {
+                const category = req.params.category;
+                const pipeline = [
+                    { $match: { petCategory: category } },
+                    { $sample: { size: 3 } }
+                ];
+                const results = await petCollection.aggregate(pipeline).toArray();
+                res.send(results)
+            } catch (error) {
+                res.status(500).send("Intrnal Server Error");
+            }
+
 
         })
 
@@ -479,7 +550,7 @@ async function run() {
                     }
                     else {
                         if (result.adopted) {
-                            res.send("Sorry! This pet is adopted by another person!");
+                            res.status(409).send("Sorry! This pet is adopted by another person!");
                         }
                         else {
                             const adoptionReqChk = await adoptionReqCollection.findOne({ petId: id, email: email });
@@ -507,13 +578,13 @@ async function run() {
 
         app.post("/makeDonationCampign", verifyToken, async (req, res) => {
             const email = jwtEmail(req.cookies);
-            const { petPicture, shortDescription, longDescription, maxDonation, lastDateOfDonation, ceateTime } = req.body;
+            const { name, petPicture, shortDescription, longDescription, maxDonation, lastDateOfDonation, ceateTime } = req.body;
             try {
-                if (!petPicture || !shortDescription || !longDescription || !maxDonation || !lastDateOfDonation || !ceateTime) {
+                if (!petPicture || !name || !shortDescription || !longDescription || !maxDonation || !lastDateOfDonation || !ceateTime) {
                     res.status(500).send("Please fillup form correctly!");
                 }
                 else {
-                    const result = await donationCampaingCollection.insertOne({ petPicture, shortDescription, longDescription, maxDonation, lastDateOfDonation, ceateTime, email, paused: false });
+                    const result = await donationCampaingCollection.insertOne({ petPicture, name, shortDescription, longDescription, maxDonation, lastDateOfDonation, ceateTime, email, paused: false });
                     if (result.acknowledged) {
                         res.status(201).send("Donation Ceated Successfully!")
                     }
