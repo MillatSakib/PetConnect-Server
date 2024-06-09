@@ -454,16 +454,40 @@ async function run() {
 
         app.get("/randomDoanation", async (req, res) => {
             try {
-                const category = req.params.category;
                 const pipeline = [
-                    { $sample: { size: 3 } }
+                    { $sample: { size: 3 } },
+                    {
+                        $lookup: {
+                            from: "donator",
+                            localField: "_id",
+                            foreignField: "id",
+                            as: "donations"
+                        }
+                    },
+                    {
+                        $addFields: {
+                            totalDonation: { $sum: "$donations.donationAmount" }
+                        }
+                    },
+                    {
+                        $project: {
+                            email: 1,
+                            name: 1,
+                            petPicture: 1,
+                            maxDonation: 1,
+                            ceateTime: 1,
+                            lastDateOfDonation: 1,
+                            totalDonation: 1
+                        }
+                    }
                 ];
                 const results = await donationCampaingCollection.aggregate(pipeline).toArray();
-                res.send(results)
+                res.send(results);
             } catch (error) {
-                res.status(500).send("Intrnal Server Error");
+                res.status(500).send("Internal Server Error");
             }
-        })
+        });
+
 
 
         app.get("/myAchivedDonation", verifyToken, async (req, res) => {
