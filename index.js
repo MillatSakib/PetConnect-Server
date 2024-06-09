@@ -440,9 +440,54 @@ async function run() {
             } catch (error) {
                 res.status(500).send("Intrnal Server Error");
             }
-
-
         })
+
+
+        app.get("/myAchivedDonation", verifyToken, async (req, res) => {
+            try {
+                const email = jwtEmail(req.cookies);
+                const aggregationPipeline = [
+                    {
+                        $lookup: {
+                            from: "donationCampaign",
+                            localField: "id",
+                            foreignField: "_id",
+                            as: "campaignDetails"
+                        }
+                    },
+                    {
+                        $unwind: "$campaignDetails"
+                    },
+                    {
+                        $match: {
+                            email: email,
+                        }
+                    },
+                    {
+                        $group: {
+                            _id: "$campaignDetails._id",
+                            totalDonation: { $sum: "$donationAmount" },
+                            maxDonation: { $max: "$donationAmount" },
+                            petName: { $first: "$campaignDetails.name" }
+                        }
+                    },
+                    {
+                        $project: {
+                            _id: 0,
+                            campaignId: "$_id",
+                            totalDonation: 1,
+                            maxDonation: 1,
+                            petName: 1
+                        }
+                    }
+                ];
+                const result = await donatorCollection.aggregate(aggregationPipeline).toArray();
+                res.send(result);
+            } catch (error) {
+                console.error(error);
+                res.status(500).send("Internal Server Error");
+            }
+        });
 
 
         app.get("/donationDelete/:id", verifyToken, verifyAdmin, async (req, res) => {
