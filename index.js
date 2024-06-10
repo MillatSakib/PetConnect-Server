@@ -26,23 +26,26 @@ app.use(express.json());
 
 // custom middlewares 
 const verifyToken = (req, res, next) => {
+
     try {
         if (!req.cookies) {
-            const error = new Error('Unauthorized Access');
-            return res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(401).json({ error: error.message });
+
+            const error = new Error('Unauthorized Access1');
+            return res.status(401).json({ error: error.message });
         }
         const token = req.cookies.token;
+        console.log(req.cookies);
         jwt.verify(token, process.env.Access_Token_Secret, (err, decoded) => {
             if (err) {
                 console.log(err);
-                return res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(401).send({ message: 'unauthorized access' })
+                return res.status(401).send({ message: 'unauthorized access2' })
             }
             req.decoded = decoded;
             next();
         })
     }
     catch (errors) {
-        return res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(401).send({ message: 'unauthorized access' });
+        return res.status(401).send({ message: 'unauthorized access3' });
     }
 }
 
@@ -120,13 +123,13 @@ async function run() {
                     }
                     else {
                         const error = new Error('Server Error');
-                        res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(401).json({ error: error.message });
+                        res.status(401).json({ error: error.message });
                     }
                 }
                 else {
                     //If the user are not available then cookie will delete and send Unauthorized
                     const error = new Error('Unauthorized Access');
-                    res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(500).json({ error: error.message });
+                    res.status(500).json({ error: error.message });
                 }
             }
         })
@@ -137,6 +140,7 @@ async function run() {
             const query = { email: email };
             const user = await userCollection.findOne(query);
             const isAdmin = user?.role === 'admin';
+            console.log(isAdmin);
             if (!isAdmin) {
                 return res.status(403).send({ message: 'forbidden access' });
             }
@@ -148,7 +152,7 @@ async function run() {
         app.post("/userSign", async (req, res) => {
             const info = req.body;
             if (!info.displayName || !info.uid || !info.email || !info.photoURL) {
-                return res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).send("Forbidden Access!")
+                return res.send("Forbidden Access!")
             }
             else {
                 const insertInfo = {
@@ -168,12 +172,12 @@ async function run() {
                         res.cookie('token', token, cookieOptions).send({ success: true })
                     } else {
                         const error = new Error('Unauthorized Access');
-                        return res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(500).json({ error: error.message });
+                        return res.status(500).json({ error: error.message });
                     }
                 }
                 else if (!result && pesult) {
                     const error = new Error('Unauthorized Access');
-                    return res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(500).json({ error: error.message });
+                    return res.status(500).json({ error: error.message });
                 }
                 else {
                     if (info.email === result.email) {
@@ -182,7 +186,7 @@ async function run() {
                     }
                     else {
                         const error = new Error('Unauthorized Access');
-                        return res.clearCookie("token", { ...cookieOptions, maxAge: 0 }).status(500).json({ error: error.message });
+                        return res.status(500).json({ error: error.message });
                     }
                 }
             }
@@ -234,7 +238,7 @@ async function run() {
         app.delete("/myAddedPetsDelete/:id", verifyToken, async (req, res) => {
             const email = jwtEmail(req.cookies);
             try {
-                const id = new ObjectId(req.params.id);
+                const id = req.params.id;
                 const deleteResult = await petCollection.deleteOne({ email: email, _id: new ObjectId(id) });
                 if (deleteResult.deletedCount) {
                     res.status(200).send("Deleted Successfully!")
@@ -253,7 +257,7 @@ async function run() {
         app.patch("/adoptedByOthers/:id", verifyToken, async (req, res) => {
             const email = jwtEmail(req.cookies);
             try {
-                const id = new ObjectId(req.params.id);
+                const id = req.params.id;
                 const result = await petCollection.findOne({ email: email, _id: new ObjectId(id) });
                 if (result) {
                     if (result.adopted) {
@@ -284,17 +288,18 @@ async function run() {
 
         app.put("/updatePet/:id", verifyToken, async (req, res) => {
             const email = jwtEmail(req.cookies);
-            if (!email) {
-                return res.status(501).json({ error: "Unauthorize Access" })
-            }
-            const id = new ObjectId(req.params.id);
-            const { petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time, adopted } = req.body;
-            if (!petImgURL || !petName || !petAge || !petCategory || !petLocation || !shortDescription || !longDescription || !time || !email || adopted) {
-                return res.status(400).json({ error: 'Please fillup all the input correctly!' });
-            }
-            else {
+            const id = req.params.id;
+            console.log(req.body);
+            const { petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time } = req.body;
+            // console.log(petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time, adopted, email);
+            // if (!petImgURL || !petName || !petAge || !petCategory || !petLocation || !shortDescription || !longDescription || !time || !email) {
+            //     return res.status(400).send("Bad Request");
+            // }
+            // else
+            {
                 try {
-                    const petInfo = { petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time, adopted: false, email }
+                    const petInfo = { petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time, email }
+                    console.log(petInfo);
                     const result = await petCollection.updateOne({ email: email, _id: new ObjectId(id) }, { $set: petInfo });
                     if (result.acknowledged) {
                         res.status(201).send("Pet Updated Successfully!");
@@ -455,6 +460,14 @@ async function run() {
             }
         })
 
+
+        app.post("/addDonationCampain", verifyToken, async (req, res) => {
+            const email = jwtEmail(req.cookies);
+            const { ceateTime, longDescription, maxDonation, name, petPicture, shortDescription, lastDateOfDonation } = req.body;
+            const donationCampainData = { ceateTime, longDescription, maxDonation, name, petPicture, shortDescription, email, lastDateOfDonation, paused: false }
+            const result = await donationCampaingCollection.insertOne(donationCampainData);
+            res.send("Donation Campain added successfully!")
+        })
 
         app.get("/randomDoanation", async (req, res) => {
             try {
@@ -815,7 +828,7 @@ async function run() {
         app.get("/allAdoptionReq", verifyToken, async (req, res) => {
             try {
                 const email = jwtEmail(req.cookies);
-                const result = await adoptionReqCollection.find({ adoptionPosterEmail: email }, { projection: { petName: 1, petImgURL: 1, name: 1, address: 1, phoneNumber: 1, accepted: 1, rejected: 1 } }).toArray();
+                const result = await adoptionReqCollection.find({ adoptionPosterEmail: email }, { projection: { petName: 1, petImgURL: 1, name: 1, address: 1, phoneNumber: 1, accepted: 1, rejected: 1, email: 1, petId: 1 } }).toArray();
                 res.send(result)
             } catch (error) {
                 res.status(500).send("Internal Server Error!");
@@ -823,11 +836,11 @@ async function run() {
         })
 
 
-        app.patch("/acceptAdoptionReq/:id", verifyToken, async (req, res) => {
+        app.patch("/acceptAdoptionReq/:petId", verifyToken, async (req, res) => {
             {
                 try {
                     const email = jwtEmail(req.cookies);
-                    const id = req.params.id;
+                    const id = req.params.petId;
                     const adopterId = req.body.adopterId;
                     if (!ObjectId.isValid(id) || !ObjectId.isValid(adopterId)) {
                         return res.status(400).send("Invalid ID format");
