@@ -156,7 +156,7 @@ async function run() {
             }
             else {
                 const insertInfo = {
-                    name: info.name,
+                    name: info.displayName,
                     uid: info.uid,
                     email: info.email,
                     photoURL: info.photoURL
@@ -440,7 +440,7 @@ async function run() {
 
         app.get("/donationCampaigns", verifyToken, verifyAdmin, async (req, res) => {
             try {
-                const result = await donationCampaingCollection.find({}, { projection: { email: 1, petPicture: 1, maxDonation: 1, ceateTime: 1, lastDateOfDonation: 1 } }).toArray();
+                const result = await donationCampaingCollection.find({}, { projection: { email: 1, petPicture: 1, maxDonation: 1, ceateTime: 1, lastDateOfDonation: 1, name: 1, paused: 1 } }).toArray();
                 res.send(result)
             } catch (error) {
                 res.status(500).send("Internal Server Error!");
@@ -591,7 +591,7 @@ async function run() {
         ;
 
 
-        app.get("/donationDelete/:id", verifyToken, verifyAdmin, async (req, res) => {
+        app.delete("/donationDelete/:id", verifyToken, verifyAdmin, async (req, res) => {
             try {
                 const id = req.params.id;
                 if (!ObjectId.isValid(id)) {
@@ -809,6 +809,28 @@ async function run() {
                 res.status(500).send("Internal Server Error!");
             }
         })
+        app.patch("/donationPausebyAdmin/:id", verifyToken, verifyAdmin, async (req, res) => {
+            try {
+
+                const id = req.params.id;
+                const result = await donationCampaingCollection.findOne({ _id: new ObjectId(id) });
+                if (result.paused) {
+                    res.status(200).send("Already paused");
+                } else {
+                    const paused = await donationCampaingCollection.updateOne({ _id: new ObjectId(id) }, { $set: { paused: true } });
+                    if (paused.modifiedCount) {
+                        res.status(200).send("Paused Successfully!");
+                    }
+                    else {
+                        res.status(401).send("Unauthorize Access!");
+                    }
+                }
+            }
+            catch (error) {
+                console.log(error);
+                res.status(500).send("Internal Server Error!");
+            }
+        })
 
         app.patch("/donationResume/:id", verifyToken, async (req, res) => {
             try {
@@ -937,8 +959,10 @@ async function run() {
                     if (!ObjectId.isValid(id) || !ObjectId.isValid(adopterId)) {
                         return res.status(400).send("Invalid ID format");
                     }
-                    const result = await petCollection.findOne({ _id: new ObjectId(id), email: email })
-                    if (result?.rejected === false) {
+                    const result = await petCollection.findOne({ _id: new ObjectId(id), email })
+                    console.log(result);
+                    if (result?.adopted === false) {
+
                         const updatePetAdoptiation = await petCollection.updateOne({ _id: new ObjectId(id) }, { $set: { adopted: true } });
                         if (updatePetAdoptiation?.acknowledged === true) {
                             const updateAdopterReq = await adoptionReqCollection.updateOne({ _id: new ObjectId(adopterId), adoptionPosterEmail: email, rejected: false }, { $set: { accepted: true } });
