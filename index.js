@@ -359,7 +359,7 @@ async function run() {
 
         app.get("/allPets", verifyToken, verifyAdmin, async (req, res) => {
             try {
-                const result = await petCollection.find({}, { projection: { petName: 1, petAge: 1, petImgURL: 1, petCategory: 1 } }).toArray();
+                const result = await petCollection.find({}, { projection: { petName: 1, petAge: 1, petImgURL: 1, petCategory: 1, adopted: 1 } }).toArray();
                 res.send(result);
             }
             catch (error) {
@@ -697,16 +697,14 @@ async function run() {
 
         app.post("/petAdoptionUser/:id", verifyToken, async (req, res) => {
             const email = jwtEmail(req.cookies);
-            const id = req.params.id;
+            const id = new ObjectId(req.params.id);
             const { petName, petImgURL, name, phoneNumber, address } = req.body;
             try {
-                // const result = awiat petCollection.findOne({ _id: new ObjectId(id) })
                 if (!petName || !petImgURL || !phoneNumber || !address || !name) {
-                    console.log(petName, petImgURL, name, phoneNumber, address);
                     res.status(500).send("Fillup the form correctly!");
                 }
                 else {
-                    const result = await petCollection.findOne({ _id: new ObjectId(id) });
+                    const result = await petCollection.findOne({ _id: id });
                     if (!result) {
                         res.status(404).send("Sorry Pet not found!");
                     }
@@ -845,7 +843,7 @@ async function run() {
                 const result = await donationCampaingCollection.findOne({ _id: new ObjectId(id) });
                 if (result.email === email) {
                     const message = await donatorCollection.find({ id: new ObjectId(id) }, { projection: { name: 1, donationAmount: 1, email: 1 } }).toArray();
-                    res.send(message);
+                    res.setHeader('Cache-Control', 'no-store').send(message);
                 }
                 else {
                     res.status(401).send("Unauthorize Access!");
@@ -890,12 +888,44 @@ async function run() {
         app.get("/allAdoptionReq", verifyToken, async (req, res) => {
             try {
                 const email = jwtEmail(req.cookies);
-                const result = await adoptionReqCollection.find({ adoptionPosterEmail: email }, { projection: { petName: 1, petImgURL: 1, name: 1, address: 1, phoneNumber: 1, accepted: 1, rejected: 1, email: 1, petId: 1 } }).toArray();
-                res.send(result)
+
+                const pipeline = [
+                    {
+                        $match: { adoptionPosterEmail: email }
+                    },
+                    {
+                        $lookup: {
+                            from: 'allPets', // Replace 'allpet' with your actual collection name
+                            localField: 'petId',
+                            foreignField: '_id',
+                            as: 'petDetails'
+                        }
+                    },
+                    {
+                        $unwind: '$petDetails'
+                    },
+                    {
+                        $project: {
+                            petName: 1,
+                            petImgURL: 1,
+                            name: 1,
+                            address: 1,
+                            phoneNumber: 1,
+                            accepted: 1,
+                            rejected: 1,
+                            email: 1,
+                            petId: 1,
+                            adopted: '$petDetails.adopted'
+                        }
+                    }
+                ];
+                const result = await adoptionReqCollection.aggregate(pipeline).toArray();
+                res.send(result);
             } catch (error) {
                 res.status(500).send("Internal Server Error!");
             }
-        })
+        });
+
 
 
         app.patch("/acceptAdoptionReq/:petId", verifyToken, async (req, res) => {
@@ -908,7 +938,7 @@ async function run() {
                         return res.status(400).send("Invalid ID format");
                     }
                     const result = await petCollection.findOne({ _id: new ObjectId(id), email: email })
-                    if (result?.adopted === false) {
+                    if (result?.rejected === false) {
                         const updatePetAdoptiation = await petCollection.updateOne({ _id: new ObjectId(id) }, { $set: { adopted: true } });
                         if (updatePetAdoptiation?.acknowledged === true) {
                             const updateAdopterReq = await adoptionReqCollection.updateOne({ _id: new ObjectId(adopterId), adoptionPosterEmail: email, rejected: false }, { $set: { accepted: true } });
@@ -925,8 +955,8 @@ async function run() {
                             res.status(500).send("Failed to update pet adoption status");
                         }
                     }
-                    else if (result?.adopted === true) {
-                        res.status(409).send("This pet has already been adopted");
+                    else if (result?.rejected === true) {
+                        res.status(409).send("You already rejected this person for adopting this pet");
                     }
                     else {
                         res.status(404).send("Unauthorise access or Data not found!")
@@ -943,12 +973,13 @@ async function run() {
             try {
                 const email = jwtEmail(req.cookies);
                 const id = req.params.id;
+                console.log(id);
                 if (!ObjectId.isValid(id)) {
                     return res.status(400).send("Invalid ID format");
                 }
                 const result = await adoptionReqCollection.findOne({ _id: new ObjectId(id) });
-                if (result?.rejected === true) {
-                    res.status(409).send("You have already rejected this adoption request!");
+                if (result?.accepted === true) {
+                    res.status(409).send("You have already accepted this adoption request!");
                 }
                 else if (result?.rejected === false) {
                     const updating = await adoptionReqCollection.updateOne({ adoptionPosterEmail: email, _id: new ObjectId(id) }, { $set: { rejected: true } });
@@ -960,6 +991,7 @@ async function run() {
                     }
                 }
                 else {
+
                     res.status(400).send("Bad Request");
                 }
             } catch (error) {
