@@ -316,9 +316,39 @@ async function run() {
         })
 
 
+        app.put("/updatePetAdmin/:id", verifyToken, verifyAdmin, async (req, res) => {
+            const email = jwtEmail(req.cookies);
+            const id = req.params.id;
+            console.log(req.body);
+            const { petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time } = req.body;
+            // console.log(petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time, adopted, email);
+            // if (!petImgURL || !petName || !petAge || !petCategory || !petLocation || !shortDescription || !longDescription || !time || !email) {
+            //     return res.status(400).send("Bad Request");
+            // }
+            // else
+            {
+                try {
+                    const petInfo = { petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time, email }
+                    console.log(petInfo);
+                    const result = await petCollection.updateOne({ email: email, _id: new ObjectId(id) }, { $set: petInfo });
+                    if (result.acknowledged) {
+                        res.status(201).send("Pet Updated Successfully!");
+                    }
+                    else {
+                        return res.status(500).json({ error: "Internal error occured!" })
+                    }
+                }
+                catch (error) {
+                    console.log("Got Error", error);
+                    return res.status(500).json({ error: "Server Error!" })
+                }
+            }
+        })
+
+
         app.get("/allUsers", verifyToken, verifyAdmin, async (req, res) => {
             try {
-                const result = await userCollection.find({}, { projection: { name: 1, email: 1, photoURL: 1 } }).toArray();
+                const result = await userCollection.find({}, { projection: { name: 1, email: 1, photoURL: 1, role: 1 } }).toArray();
                 res.send(result);
             }
             catch (error) {
@@ -363,10 +393,9 @@ async function run() {
 
         app.patch("/makeAdmin", verifyToken, verifyAdmin, async (req, res) => {
             const { email } = req.body;
-
+            console.log(email);
             try {
                 const result = await userCollection.updateOne({ email: email }, { $set: { role: "admin" } })
-                console.log(result);
                 if (!result.matchedCount) {
                     res.status(404).send("User Not Found!");
                 }
@@ -510,7 +539,13 @@ async function run() {
         app.get("/myAchivedDonation", verifyToken, async (req, res) => {
             try {
                 const email = jwtEmail(req.cookies);
+
                 const aggregationPipeline = [
+                    {
+                        $match: {
+                            email: email
+                        }
+                    },
                     {
                         $lookup: {
                             from: "donationCampaign",
@@ -523,16 +558,13 @@ async function run() {
                         $unwind: "$campaignDetails"
                     },
                     {
-                        $match: {
-                            email: email,
-                        }
-                    },
-                    {
                         $group: {
                             _id: "$campaignDetails._id",
                             totalDonation: { $sum: "$donationAmount" },
                             maxDonation: { $max: "$donationAmount" },
-                            petName: { $first: "$campaignDetails.name" }
+                            petName: { $first: "$campaignDetails.name" },
+                            totalAmountDonationNeed: { $first: "$campaignDetails.maxDonation" },
+                            paused: { $first: "$campaignDetails.paused" }
                         }
                     },
                     {
@@ -541,17 +573,22 @@ async function run() {
                             campaignId: "$_id",
                             totalDonation: 1,
                             maxDonation: 1,
-                            petName: 1
+                            petName: 1,
+                            totalAmountDonationNeed: 1,
+                            paused: 1
                         }
                     }
                 ];
+
                 const result = await donatorCollection.aggregate(aggregationPipeline).toArray();
+                console.log(result); // Log the result to debug
                 res.send(result);
             } catch (error) {
                 console.error(error);
                 res.status(500).send("Internal Server Error");
             }
         });
+        ;
 
 
         app.get("/donationDelete/:id", verifyToken, verifyAdmin, async (req, res) => {
@@ -573,7 +610,7 @@ async function run() {
             }
         })
 
-        app.put("/editDonationCampign/:id", verifyToken, verifyAdmin, async (req, res) => {
+        app.put("/editDonationCampign/:id", verifyToken, async (req, res) => {
             const { petPicture, shortDescription, longDescription, maxDonation, lastDateOfDonation, ceateTime } = req.body;
             try {
                 const id = req.params.id;
@@ -775,6 +812,31 @@ async function run() {
             }
         })
 
+        app.patch("/donationResume/:id", verifyToken, async (req, res) => {
+            try {
+                const email = jwtEmail(req.cookies);
+                const id = req.params.id;
+                const result = await donationCampaingCollection.findOne({ _id: new ObjectId(id) });
+                if (!result.paused) {
+                    res.status(200).send("Already Resumed");
+                } else {
+                    if (result.email === email) {
+                        const paused = await donationCampaingCollection.updateOne({ _id: new ObjectId(id) }, { $set: { paused: false } });
+                        if (paused.matchedCount) {
+                            res.status(200).send("Resumed Successfully!");
+                        }
+                    }
+                    else {
+                        res.status(401).send("Unauthorize Access!");
+                    }
+                }
+            }
+            catch (error) {
+                console.log(error);
+                res.status(500).send("Internal Server Error!");
+            }
+        })
+
         app.get("/viewDonator/:id", verifyToken, async (req, res) => {
 
             try {
@@ -782,7 +844,7 @@ async function run() {
                 const id = req.params.id;
                 const result = await donationCampaingCollection.findOne({ _id: new ObjectId(id) });
                 if (result.email === email) {
-                    const message = await donatorCollection.find({ id: new ObjectId(id) }, { projection: { name: 1, donationAmount: 1 } }).toArray();
+                    const message = await donatorCollection.find({ id: new ObjectId(id) }, { projection: { name: 1, donationAmount: 1, email: 1 } }).toArray();
                     res.send(message);
                 }
                 else {
