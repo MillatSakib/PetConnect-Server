@@ -5,6 +5,11 @@ const jwt = require('jsonwebtoken');
 require('dotenv').config()
 const cookieParser = require('cookie-parser');
 const port = process.env.PORT || 5000;
+const os = require('os');
+const osu = require('node-os-utils');
+const cpu = osu.cpu;
+const mem = osu.mem;
+const sysOs = osu.os;
 
 // middlewares
 
@@ -1298,6 +1303,36 @@ async function run() {
                 res.status(500).send("Internal Server Error!");
             }
         })
+
+
+        app.get('/systemInfo', verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const totalMemory = os.totalmem();
+                const freeMemory = os.freemem();
+                const usedMemory = totalMemory - freeMemory;
+                const cpus = os.cpus();
+                const totalCores = cpus.length;
+                const uptime = os.uptime();
+                const platform = os.platform();
+                const cpuUsage = await cpu.usage()
+                const arch = os.arch();
+                res.json({
+                    totalMemory: totalMemory / (1024 * 1024),
+                    freeMemory: freeMemory / (1024 * 1024),
+                    usedMemory: usedMemory / (1024 * 1024),
+                    totalCores: totalCores,
+                    cpuUsage,
+                    uptime: uptime,
+                    platform: platform,
+                    architecture: arch
+                })
+            }
+            catch (error) {
+                res.send("Internal server Error!");
+            }
+        })
+
+
     }
     catch (error) {
         console.log(error);
