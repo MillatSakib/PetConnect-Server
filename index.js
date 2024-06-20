@@ -1332,6 +1332,27 @@ async function run() {
             }
         })
 
+        app.get("/apiHit", verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const result = await apiHits.find({}).toArray();
+                res.send(result)
+            }
+            catch (error) {
+                res.status(500).send("Internal Server Error!");
+            }
+        })
+
+
+        app.get("/errorReport", verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const result = await apiError.find({}).toArray();
+                res.send(result)
+            }
+            catch (error) {
+                res.status(500).send("Internal Server Error!");
+            }
+        })
+
 
     }
     catch (error) {
