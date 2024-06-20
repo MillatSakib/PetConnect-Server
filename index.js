@@ -15,7 +15,8 @@ app.use(
         origin: [
             "http://localhost:5173",
             "http://localhost:5174",
-            "https://petconnect0.netlify.app"
+            "https://petconnect0.netlify.app",
+            "https://petconnect0aaaa.netlify.app"
         ],
         credentials: true,
     })
@@ -34,10 +35,8 @@ const verifyToken = (req, res, next) => {
             return res.status(401).json({ error: error.message });
         }
         const token = req.cookies.token;
-        console.log(req.cookies);
         jwt.verify(token, process.env.Access_Token_Secret, (err, decoded) => {
             if (err) {
-                console.log(err);
                 return res.status(401).send({ message: 'unauthorized access2' })
             }
             req.decoded = decoded;
@@ -63,11 +62,6 @@ const client = new MongoClient(uri, {
 });
 
 
-//Sample request response
-app.get('/', (req, res) => {
-    res.send('Pet is playing.');
-})
-
 
 // Reusable code
 
@@ -80,6 +74,21 @@ const jwtEmail = (token) => {
     }
 }
 
+const jwtUserId = (token) => {
+    try {
+        const decoded = jwt.verify(token.token, process.env.Access_Token_Secret);
+        return decoded.uid;
+    } catch (error) {
+        return null;
+    }
+}
+
+
+
+//Sample request response
+app.get('/', (req, res) => {
+    res.send('Pet is playing.');
+})
 
 const cookieOptions = {
     httpOnly: true,     //Protect to access token using Javascript on client side
@@ -97,14 +106,33 @@ async function run() {
         const adoptionReqCollection = client.db("petAdoption").collection("adoptionReq");
         const donationCampaingCollection = client.db("petAdoption").collection("donationCampaign");
         const donatorCollection = client.db("petAdoption").collection('donator');
+        const apiHits = client.db("petAdoption").collection('apiHits');
+        const apiError = client.db("petAdoption").collection('apiError');
 
-        app.get('/demo', async (req, res) => {
-            res.status(200).send("Server Working Perfectly!")
-        });
+        const errorCase = async (apiRoute, cookie, message) => {
+            const errorData = {
+                userEmail: jwtEmail(cookie),
+                userUid: jwtUserId(cookie),
+                errorMessage: message,
+                time: Date.now(),
+                api: apiRoute
+            }
+            await apiError.insertOne(errorData);
+        }
+        const publicErrorCase = async (apiRoute, message) => {
+            const errorData = {
+                userEmail: anonymous,
+                userUid: anonymous,
+                errorMessage: message,
+                time: Date.now(),
+                api: apiRoute
+            }
+            await apiError.insertOne(errorData);
+        }
 
 
         //Here server make JWT token when the user are login or register
-        //This is a tamplate. Not used in the frontend
+        //This is a template. Not used in the frontend
         app.post('/accessToken', async (req, res) => {
             const user = req.body;
             if (user?.uid) {
@@ -140,71 +168,101 @@ async function run() {
             const query = { email: email };
             const user = await userCollection.findOne(query);
             const isAdmin = user?.role === 'admin';
-            console.log(isAdmin);
             if (!isAdmin) {
                 return res.status(403).send({ message: 'forbidden access' });
             }
             next();
         }
 
-
+        app.get("/totalApiHit", verifyToken, verifyAdmin, async (req, res) => {
+            res.send(await apiHits.findOne({ api: "allApi" }, { projection: { _id: 0, api: 1, hitCount: 1 } }));
+        })
         //Here All Kind of Corner Case Handeled
         app.post("/userSign", async (req, res) => {
-            const info = req.body;
-            if (!info.displayName || !info.uid || !info.email || !info.photoURL) {
-                return res.send("Forbidden Access!")
-            }
-            else {
-                const insertInfo = {
-                    name: info.displayName,
-                    uid: info.uid,
-                    email: info.email,
-                    photoURL: info.photoURL
-                }
-                const result = await userCollection.findOne({ uid: insertInfo.uid, email: insertInfo.email });
-                const pesult = await userCollection.findOne({ $or: [{ uid: insertInfo.uid }, { email: insertInfo.email }] })
-                if (!result && !pesult) {
-
-                    insertInfo.role = "user"
-                    const result1 = await userCollection.insertOne(insertInfo);
-                    if (result1?.acknowledged) {
-                        const token = jwt.sign({ email: info.email }, process.env.Access_Token_Secret, { expiresIn: '720h' });
-                        res.cookie('token', token, cookieOptions).send({ success: true })
-                    } else {
-                        const error = new Error('Unauthorized Access');
-                        return res.status(500).json({ error: error.message });
-                    }
-                }
-                else if (!result && pesult) {
-                    const error = new Error('Unauthorized Access');
-                    return res.status(500).json({ error: error.message });
+            try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/userSign" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
+                const info = req.body;
+                if (!info.displayName || !info.uid || !info.email || !info.photoURL) {
+                    res.send("Forbidden Access!")
                 }
                 else {
-                    if (info.email === result.email) {
-                        const token = jwt.sign({ email: info.email }, process.env.Access_Token_Secret, { expiresIn: '720h' });
-                        return res.cookie('token', token, cookieOptions).send({ success: true })
+                    const insertInfo = {
+                        name: info.displayName,
+                        uid: info.uid,
+                        email: info.email,
+                        photoURL: info.photoURL
+                    }
+                    const result = await userCollection.findOne({ uid: insertInfo.uid, email: insertInfo.email });
+                    const pesult = await userCollection.findOne({ $or: [{ uid: insertInfo.uid }, { email: insertInfo.email }] })
+                    if (!result && !pesult) {
+
+                        insertInfo.role = "user"
+                        const result1 = await userCollection.insertOne(insertInfo);
+                        if (result1?.acknowledged) {
+                            const jwtSign = { email: info.email, uid: info.uid }
+                            const token = jwt.sign(jwtSign, process.env.Access_Token_Secret, { expiresIn: '720h' });
+                            res.cookie('token', token, cookieOptions).send({ success: true })
+                        } else {
+                            const error = new Error('Unauthorized Access');
+                            res.status(500).json({ error: error.message });
+                        }
+                    }
+                    else if (!result && pesult) {
+                        const error = new Error('Unauthorized Access');
+                        res.status(500).json({ error: error.message });
                     }
                     else {
-                        const error = new Error('Unauthorized Access');
-                        return res.status(500).json({ error: error.message });
+                        if (info.email === result.email) {
+                            const jwtSign = { email: info.email, uid: info.uid }
+                            const token = jwt.sign(jwtSign, process.env.Access_Token_Secret, { expiresIn: '720h' });
+                            res.cookie('token', token, cookieOptions).send({ success: true })
+                        }
+                        else {
+                            const error = new Error('Unauthorized Access');
+                            res.status(500).json({ error: error.message });
+                        }
                     }
                 }
+            }
+            catch (error) {
+                const errorCollection = { userEmail: req.body?.email, userUid: req.body?.uid, errorMessage: error.message, time: Date.now(), api: "/userSign" }
+                await apiError.insertOne(errorCollection);
+                res.send("Internal server Error!");
             }
         })
 
 
-        app.get("/verifyAdmin", verifyToken, verifyAdmin, (req, res) => {
-            res.send({ message: "have access" })
+        app.get("/verifyAdmin", verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/verifyAdmin" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
+                res.send({ message: "have access" })
+            }
+            catch (error) {
+                errorCase("/verifyAdmin", req.cookies, error.message);
+                res.send("Internal Server Error!");
+            }
         })
 
         app.post("/addPet", verifyToken, async (req, res) => {
-            const email = jwtEmail(req.cookies);
-            const { petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time, adopted } = req.body;
-            if (!petImgURL || !petName || !petAge || !petCategory || !petLocation || !shortDescription || !longDescription || !time || !email || adopted) {
-                return res.status(400).json({ error: 'Please fillup all the input correctly!' });
-            }
-            else {
-                try {
+            try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/addPet" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
+                res.send({ message: "have access" })
+                const email = jwtEmail(req.cookies);
+                const { petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time, adopted } = req.body;
+                if (!petImgURL || !petName || !petAge || !petCategory || !petLocation || !shortDescription || !longDescription || !time || !email || adopted) {
+                    return res.status(400).json({ error: 'Please fillup all the input correctly!' });
+                }
+                else {
+
                     const petInfo = { petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time, adopted: false, email }
                     const result = await petCollection.insertOne(petInfo);
                     if (result.acknowledged) {
@@ -214,30 +272,38 @@ async function run() {
                         return res.status(500).json({ error: "Internal error occured" })
                     }
                 }
-                catch (error) {
-                    console.log("Got Error", error);
-                    return res.status(500).json({ error: "Server Error" })
-                }
+            }
+            catch (error) {
+                errorCase("/addPet", req.cookies, error.message);
+                return res.status(500).json({ error: "Server Error" })
             }
         })
 
 
         app.get("/myAddedPets", verifyToken, async (req, res) => {
-            const email = jwtEmail(req.cookies);
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/myAddedPets" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
+                const email = jwtEmail(req.cookies);
                 const result = await petCollection.find({ email: email }, { projection: { petName: 1, petCategory: 1, adopted: 1, petImgURL: 1 } }).toArray();
                 res.status(200).send(result)
             }
             catch (error) {
-                console.log("Got Error", error);
+                errorCase("/myAddedPets", req.cookies, error.message);
                 return res.status(500).json({ error: "Server Error" })
             }
         })
 
 
         app.delete("/myAddedPetsDelete/:id", verifyToken, async (req, res) => {
-            const email = jwtEmail(req.cookies);
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/myAddedPetsDelete/:id" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
+                const email = jwtEmail(req.cookies);
                 const id = req.params.id;
                 const deleteResult = await petCollection.deleteOne({ email: email, _id: new ObjectId(id) });
                 if (deleteResult.deletedCount) {
@@ -248,15 +314,19 @@ async function run() {
                 }
             }
             catch (error) {
-                console.log("Error Occured: ", error);
+                errorCase("/myAddedPetsDelete/:id", req.cookies, error.message);
                 return res.status(404).json({ error: "Inorrect Id!" })
             }
         })
 
         //This api req can only perform the Pet Owner
         app.patch("/adoptedByOthers/:id", verifyToken, async (req, res) => {
-            const email = jwtEmail(req.cookies);
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/adoptedByOthers/:id" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
+                const email = jwtEmail(req.cookies);
                 const id = req.params.id;
                 const result = await petCollection.findOne({ email: email, _id: new ObjectId(id) });
                 if (result) {
@@ -265,7 +335,6 @@ async function run() {
                     }
                     else {
                         const petAdoptionResult = await petCollection.updateOne({ email: email, _id: new ObjectId(id) }, { $set: { adopted: true } })
-                        console.log(petAdoptionResult);
                         if (petAdoptionResult.modifiedCount) {
                             res.status(200).send("Pet Adopted Successfully!")
                         }
@@ -280,7 +349,7 @@ async function run() {
                 }
             }
             catch (error) {
-                console.log("Error Occured: ", error);
+                errorCase("/adoptedByOthers/:id", req.cookies, error.message);
                 return res.status(404).json({ error: "Inorrect Id!" })
             }
         })
@@ -289,7 +358,6 @@ async function run() {
         app.put("/updatePet/:id", verifyToken, async (req, res) => {
             const email = jwtEmail(req.cookies);
             const id = req.params.id;
-            console.log(req.body);
             const { petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time } = req.body;
             // console.log(petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time, adopted, email);
             // if (!petImgURL || !petName || !petAge || !petCategory || !petLocation || !shortDescription || !longDescription || !time || !email) {
@@ -298,8 +366,11 @@ async function run() {
             // else
             {
                 try {
+                    await Promise.all([
+                        apiHits.updateOne({ api: "/updatePet/:id" }, { $inc: { hitCount: 1 } }),
+                        apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                    ]);
                     const petInfo = { petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time, email }
-                    console.log(petInfo);
                     const result = await petCollection.updateOne({ email: email, _id: new ObjectId(id) }, { $set: petInfo });
                     if (result.acknowledged) {
                         res.status(201).send("Pet Updated Successfully!");
@@ -309,7 +380,7 @@ async function run() {
                     }
                 }
                 catch (error) {
-                    console.log("Got Error", error);
+                    errorCase("/updatePet/:id", req.cookies, error.message);
                     return res.status(500).json({ error: "Server Error!" })
                 }
             }
@@ -319,7 +390,6 @@ async function run() {
         app.put("/updatePetAdmin/:id", verifyToken, verifyAdmin, async (req, res) => {
             const email = jwtEmail(req.cookies);
             const id = req.params.id;
-            console.log(req.body);
             const { petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time } = req.body;
             // console.log(petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time, adopted, email);
             // if (!petImgURL || !petName || !petAge || !petCategory || !petLocation || !shortDescription || !longDescription || !time || !email) {
@@ -328,8 +398,11 @@ async function run() {
             // else
             {
                 try {
+                    await Promise.all([
+                        apiHits.updateOne({ api: "/updatePetAdmin/:id" }, { $inc: { hitCount: 1 } }),
+                        apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                    ]);
                     const petInfo = { petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time, email }
-                    console.log(petInfo);
                     const result = await petCollection.updateOne({ email: email, _id: new ObjectId(id) }, { $set: petInfo });
                     if (result.acknowledged) {
                         res.status(201).send("Pet Updated Successfully!");
@@ -339,7 +412,7 @@ async function run() {
                     }
                 }
                 catch (error) {
-                    console.log("Got Error", error);
+                    errorCase("/updatePetAdmin/:id", req.cookies, error.message);
                     return res.status(500).json({ error: "Server Error!" })
                 }
             }
@@ -348,10 +421,15 @@ async function run() {
 
         app.get("/allUsers", verifyToken, verifyAdmin, async (req, res) => {
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/allUsers" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
                 const result = await userCollection.find({}, { projection: { name: 1, email: 1, photoURL: 1, role: 1 } }).toArray();
                 res.send(result);
             }
             catch (error) {
+                errorCase("/allUsers", req.cookies, error.message);
                 res.status(500).send("Internal Server Error!");
             }
         })
@@ -359,10 +437,15 @@ async function run() {
 
         app.get("/allPets", verifyToken, verifyAdmin, async (req, res) => {
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/allPets" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
                 const result = await petCollection.find({}, { projection: { petName: 1, petAge: 1, petImgURL: 1, petCategory: 1, adopted: 1 } }).toArray();
                 res.send(result);
             }
             catch (error) {
+                errorCase("/allPets", req.cookies, error.message);
                 res.status(500).send("Internal Server Error!");
             }
         })
@@ -370,6 +453,10 @@ async function run() {
 
         app.delete("/petDelete/:id", verifyToken, verifyAdmin, async (req, res) => {
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/petDelete/:id" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
                 const id = req.params.id;
                 if (!ObjectId.isValid(id)) {
                     return res.status(400).send("Bad Request: Invalid ID format");
@@ -386,6 +473,7 @@ async function run() {
                 }
             }
             catch (error) {
+                errorCase("/petDelete/:id", req.cookies, error.message);
                 res.status(500).send("Internal Server Error!");
             }
         })
@@ -393,8 +481,11 @@ async function run() {
 
         app.patch("/makeAdmin", verifyToken, verifyAdmin, async (req, res) => {
             const { email } = req.body;
-            console.log(email);
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/makeAdmin" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
                 const result = await userCollection.updateOne({ email: email }, { $set: { role: "admin" } })
                 if (!result.matchedCount) {
                     res.status(404).send("User Not Found!");
@@ -410,6 +501,7 @@ async function run() {
                 }
             }
             catch (error) {
+                errorCase("/makeAdmin", req.cookies, error.message);
                 res.status(500).send("Intrnal Server Error");
             }
         })
@@ -417,6 +509,10 @@ async function run() {
 
         app.patch("/petAdoptedByAdmin/:id", verifyToken, verifyAdmin, async (req, res) => {
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/petAdoptedByAdmin/:id" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
                 const id = req.params.id;
                 const result = await petCollection.updateOne({ _id: new ObjectId(id) }, { $set: { adopted: true } });
                 if (result?.matchedCount === 1 && result?.modifiedCount === 1) {
@@ -433,6 +529,7 @@ async function run() {
                 }
             }
             catch {
+                errorCase("/petAdoptedByAdmin/:id", req.cookies, error.message);
                 res.status(500).send("Internal Server Error!");
             }
         })
@@ -440,16 +537,48 @@ async function run() {
 
         app.get("/donationCampaigns", verifyToken, verifyAdmin, async (req, res) => {
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/donationCampaigns" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
                 const result = await donationCampaingCollection.find({}, { projection: { email: 1, petPicture: 1, maxDonation: 1, ceateTime: 1, lastDateOfDonation: 1, name: 1, paused: 1 } }).toArray();
                 res.send(result)
             } catch (error) {
+                errorCase("/donationCampaigns", req.cookies, error.message);
                 res.status(500).send("Internal Server Error!");
             }
         })
 
+
         app.get("/donationCampaignsUsers", async (req, res) => {
             try {
-                const campaigns = await donationCampaingCollection.find({}, { projection: { email: 1, name: 1, petPicture: 1, maxDonation: 1, ceateTime: 1, lastDateOfDonation: 1 } }).toArray();
+                await Promise.all([
+                    apiHits.updateOne({ api: "/donationCampaignsUsers" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
+                const limit = 6;
+                let cursor = null;
+                if (req.query.cursor) {
+                    try {
+                        cursor = new ObjectId(req.query.cursor);
+                    } catch (err) {
+                        return res.status(400).send("Invalid cursor format");
+                    }
+                }
+                const query = cursor ? { _id: { $gt: cursor } } : {};
+                const campaigns = await donationCampaingCollection.find(query, {
+                    projection: {
+                        email: 1,
+                        name: 1,
+                        petPicture: 1,
+                        maxDonation: 1,
+                        createTime: 1,
+                        lastDateOfDonation: 1
+                    }
+                })
+                    .sort({ _id: 1 })
+                    .limit(limit)
+                    .toArray();
                 for (let campaign of campaigns) {
                     const donations = await donatorCollection.find({ id: campaign._id }).toArray();
                     let totalDonation = 0;
@@ -458,9 +587,13 @@ async function run() {
                     }
                     campaign.totalDonation = totalDonation;
                 }
-
-                res.send(campaigns);
+                const nextCursor = campaigns.length === limit ? campaigns[campaigns.length - 1]._id : null;
+                res.json({
+                    result: campaigns,
+                    nextCursor
+                });
             } catch (error) {
+                publicErrorCase("/donationCampaignsUsers", error.message);
                 res.status(500).send("Internal Server Error!");
             }
         });
@@ -468,6 +601,10 @@ async function run() {
 
         app.get("/donationDetails/:id", async (req, res) => {
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/donationDetails/:id" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
                 const id = req.params.id;
                 const donationCampaign = await donationCampaingCollection.findOne({ _id: new ObjectId(id) });
                 const totalDonationResult = await donatorCollection.aggregate([
@@ -485,22 +622,48 @@ async function run() {
                 donationCampaign.totalDonation = totalDonation;
                 res.send(donationCampaign);
             } catch (error) {
+                publicErrorCase("/donationDetails/:id", error.message);
                 res.status(500).send("Internal Server Error!");
             }
         })
 
 
         app.post("/addDonationCampain", verifyToken, async (req, res) => {
-            const email = jwtEmail(req.cookies);
-            const { ceateTime, longDescription, maxDonation, name, petPicture, shortDescription, lastDateOfDonation } = req.body;
-            const donationCampainData = { ceateTime, longDescription, maxDonation, name, petPicture, shortDescription, email, lastDateOfDonation, paused: false }
-            const result = await donationCampaingCollection.insertOne(donationCampainData);
-            res.send("Donation Campain added successfully!")
+            try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/addDonationCampain" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
+
+                const email = jwtEmail(req.cookies);
+                const { createTime, longDescription, maxDonation, name, petPicture, shortDescription, lastDateOfDonation } = req.body;
+                if (!createTime || !longDescription || !maxDonation || !name || !petPicture || !shortDescription || !lastDateOfDonation) {
+                    res.send("Fill up the form correctly!")
+                }
+                else {
+                    const donationCampainData = { createTime, longDescription, maxDonation, name, petPicture, shortDescription, email, lastDateOfDonation, paused: false }
+                    const result = await donationCampaingCollection.insertOne(donationCampainData);
+                    res.send("Donation Campaign added successfully!")
+                }
+
+            }
+            catch (error) {
+                errorCase("/addDonationCampain", req.cookies, error.message);
+                res.send("Internal Server Error!");
+            }
+
         })
 
-        app.get("/randomDoanation", async (req, res) => {
+        app.get("/randomDoanation/:id", async (req, res) => {
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/randomDoanation/:id" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
+                const toOmit = req?.params?.id;
+                const matchStage = toOmit ? { $match: { _id: { $ne: new ObjectId(toOmit) } } } : {};
                 const pipeline = [
+                    matchStage,
                     { $sample: { size: 3 } },
                     {
                         $lookup: {
@@ -530,16 +693,19 @@ async function run() {
                 const results = await donationCampaingCollection.aggregate(pipeline).toArray();
                 res.send(results);
             } catch (error) {
+                publicErrorCase("/randomDoanation/:id", error.message);
                 res.status(500).send("Internal Server Error");
             }
         });
 
 
-
         app.get("/myAchivedDonation", verifyToken, async (req, res) => {
             try {
                 const email = jwtEmail(req.cookies);
-
+                await Promise.all([
+                    apiHits.updateOne({ api: "/myAchivedDonation" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
                 const aggregationPipeline = [
                     {
                         $match: {
@@ -579,20 +745,21 @@ async function run() {
                         }
                     }
                 ];
-
                 const result = await donatorCollection.aggregate(aggregationPipeline).toArray();
-                console.log(result); // Log the result to debug
                 res.send(result);
             } catch (error) {
-                console.error(error);
+                errorCase("/myAchivedDonation", req.cookies, error.message);
                 res.status(500).send("Internal Server Error");
             }
         });
-        ;
 
 
         app.delete("/donationDelete/:id", verifyToken, verifyAdmin, async (req, res) => {
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/donationDelete/:id" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
                 const id = req.params.id;
                 if (!ObjectId.isValid(id)) {
                     return res.status(400).send("Invalid ID format");
@@ -606,22 +773,27 @@ async function run() {
                 }
             }
             catch (error) {
+                errorCase("/donationDelete/:id", req.cookies, error.message);
                 res.status(500).send("Internal Server Error!");
             }
         })
 
         app.put("/editDonationCampign/:id", verifyToken, async (req, res) => {
-            const { petPicture, shortDescription, longDescription, maxDonation, lastDateOfDonation, ceateTime } = req.body;
+            const { petPicture, shortDescription, longDescription, maxDonation, lastDateOfDonation } = req.body;
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/editDonationCampign/:id" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
                 const id = req.params.id;
                 if (!ObjectId.isValid(id)) {
                     return res.status(400).send("Invalid ID format");
                 }
-                if (!petPicture || !shortDescription || !longDescription || !maxDonation || !lastDateOfDonation || !ceateTime) {
+                if (!petPicture || !shortDescription || !longDescription || !maxDonation || !lastDateOfDonation) {
                     res.status(500).send("Please fillup form correctly!");
                 }
                 else {
-                    const result = await donationCampaingCollection.updateOne({ _id: new ObjectId(id) }, { $set: { petPicture, shortDescription, longDescription, maxDonation, lastDateOfDonation, ceateTime, paused: false } });
+                    const result = await donationCampaingCollection.updateOne({ _id: new ObjectId(id) }, { $set: { petPicture, shortDescription, longDescription, maxDonation, lastDateOfDonation, paused: false } });
                     if (result.modifiedCount === 1) {
                         res.status(201).send("Donation Updated Successfully!")
                     } else {
@@ -630,76 +802,128 @@ async function run() {
                 }
             }
             catch (error) {
-                console.log(error);
+                errorCase("/editDonationCampign/:id", req.cookies, error.message);
                 res.status(504).send("Internal Server error!")
             }
         })
 
 
         app.post("/petListing", async (req, res) => {
-            const { timeValue } = req.body;
-            const { category } = req.body;
-            const { title } = req.body;
-            let regex;
-            if (title) {
-                const searchWord = title.toLowerCase().split(/\s+/);
-                regex = new RegExp(searchWord.join('|'), 'i');
-            } else {
-                regex = "";
-            }
-            const query = { adopted: false, time: { $lt: timeValue }, ...(category ? { petCategory: category } : {}), ...(regex ? { petName: { $regex: regex } } : {}) }
             try {
-                if (timeValue) {
-                    const result = await petCollection.find(query, { projection: { petImgURL: 1, petName: 1, petAge: 1, petLocation: 1, time: 1 } }).sort({ time: -1 }).toArray();
-                    res.send(result)
-                }
-                else {
-                    res.status(400).send("Please request correctly!");
+                await Promise.all([
+                    apiHits.updateOne({ api: "/petListing" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
+                const { category, title } = req.body;
+                const limit = 6;
+
+                let cursor = null;
+                if (req.query.cursor) {
+                    try {
+                        cursor = new ObjectId(req.query.cursor);
+                    } catch (err) {
+                        return res.status(400).send("Invalid cursor format");
+                    }
                 }
 
-            }
-            catch (error) {
-                console.log(error);
-                res.status(500).send("Intrnal Server Error");
-            }
+                // Create regex for title search
+                let regex = "";
+                if (title) {
+                    const searchWord = title.toLowerCase().split(/\s+/);
+                    regex = new RegExp(searchWord.join('|'), 'i');
+                }
 
+                // Construct query object
+                const query = {
+                    adopted: false,
+                    ...(cursor && { _id: { $lt: cursor } }),
+                    ...(category && { petCategory: category }),
+                    ...(regex && { petName: { $regex: regex } })
+                };
+
+                // Fetch results from the collection
+                const result = await petCollection.find(query, {
+                    projection: {
+                        petImgURL: 1,
+                        petName: 1,
+                        petAge: 1,
+                        petLocation: 1,
+                        time: 1
+                    }
+                })
+                    .sort({ time: -1 })
+                    .limit(limit)
+                    .toArray();
+
+                // Determine the next cursor
+                const nextCursor = result.length === limit ? result[result.length - 1]._id : null;
+
+                // Send the response
+                res.json({
+                    result,
+                    nextCursor
+                });
+            } catch (error) {
+                publicErrorCase("/petListing", error.message);
+                res.status(500).send("Internal Server Error");
+            }
         })
 
 
-        app.get("/randomPet/:category", async (req, res) => {
+        app.post("/randomPet/:category", async (req, res) => {
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/randomPet/:category" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
+                const toOmit = req?.body?.toOmit;
                 const category = req.params.category;
                 const pipeline = [
-                    { $match: { petCategory: category } },
+                    {
+                        $match: {
+                            petCategory: category,
+                            ...(toOmit && { _id: { $ne: new ObjectId(toOmit) } }
+                            )
+                        }
+                    },
                     { $sample: { size: 3 } }
                 ];
                 const results = await petCollection.aggregate(pipeline).toArray();
                 res.send(results)
             } catch (error) {
-                res.status(500).send("Intrnal Server Error");
+                publicErrorCase("/randomPet/:category", error.message);
+                res.status(500).send("Internal Server Error");
             }
-
-
         })
 
 
         app.get("/petDetails/:id", async (req, res) => {
             const id = req.params.id
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/petDetails/:id" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
                 const result = await petCollection.findOne({ _id: new ObjectId(id) });
                 res.send(result);
             }
             catch (error) {
+                publicErrorCase("/petDetails/:id", error.message);
                 res.status(400).send("Invalid Id!")
             }
         })
 
 
         app.post("/petAdoptionUser/:id", verifyToken, async (req, res) => {
-            const email = jwtEmail(req.cookies);
-            const id = new ObjectId(req.params.id);
-            const { petName, petImgURL, name, phoneNumber, address } = req.body;
+
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/petAdoptionUser/:id" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
+                const email = jwtEmail(req.cookies);
+                const id = new ObjectId(req.params.id);
+                const { petName, petImgURL, name, phoneNumber, address } = req.body;
                 if (!petName || !petImgURL || !phoneNumber || !address || !name) {
                     res.status(500).send("Fillup the form correctly!");
                 }
@@ -731,15 +955,20 @@ async function run() {
                 }
             }
             catch (error) {
+                errorCase("/petAdoptionUser/:id", req.cookies, error.message);
                 res.status(400).send("Invalid Id!");
             }
         })
 
 
         app.post("/makeDonationCampign", verifyToken, async (req, res) => {
-            const email = jwtEmail(req.cookies);
-            const { name, petPicture, shortDescription, longDescription, maxDonation, lastDateOfDonation, ceateTime } = req.body;
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/makeDonationCampign" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
+                const email = jwtEmail(req.cookies);
+                const { name, petPicture, shortDescription, longDescription, maxDonation, lastDateOfDonation, ceateTime } = req.body;
                 if (!petPicture || !name || !shortDescription || !longDescription || !maxDonation || !lastDateOfDonation || !ceateTime) {
                     res.status(500).send("Please fillup form correctly!");
                 }
@@ -751,16 +980,21 @@ async function run() {
                 }
             }
             catch (error) {
+                errorCase("/makeDonationCampign", req.cookies, error.message);
                 res.status(504).send("Internal Server error!")
             }
         })
 
 
         app.put("/updateDonationCampign/:id", verifyToken, async (req, res) => {
-            const email = jwtEmail(req.cookies);
-            const id = req.params.id;
-            const { petPicture, shortDescription, longDescription, maxDonation, lastDateOfDonation, ceateTime } = req.body;
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/updateDonationCampign/:id" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
+                const email = jwtEmail(req.cookies);
+                const id = req.params.id;
+                const { petPicture, shortDescription, longDescription, maxDonation, lastDateOfDonation, ceateTime } = req.body;
                 const descition = await donationCampaingCollection.findOne({ _id: new ObjectId(id) });
                 if (descition) {
                     if (!petPicture || !shortDescription || !longDescription || !maxDonation || !lastDateOfDonation || !ceateTime) {
@@ -776,10 +1010,9 @@ async function run() {
                 else {
                     res.status(401).send("Unauthorize Access")
                 }
-
             }
             catch (error) {
-                console.log(error);
+                errorCase("/updateDonationCampign/:id", req.cookies, error.message);
                 res.status(504).send("Internal Server error!")
             }
         })
@@ -787,6 +1020,10 @@ async function run() {
 
         app.patch("/donationPause/:id", verifyToken, async (req, res) => {
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/donationPause/:id" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
                 const email = jwtEmail(req.cookies);
                 const id = req.params.id;
                 const result = await donationCampaingCollection.findOne({ _id: new ObjectId(id) });
@@ -805,13 +1042,18 @@ async function run() {
                 }
             }
             catch (error) {
-                console.log(error);
+                errorCase("/donationPause/:id", req.cookies, error.message);
                 res.status(500).send("Internal Server Error!");
             }
         })
+
+
         app.patch("/donationPausebyAdmin/:id", verifyToken, verifyAdmin, async (req, res) => {
             try {
-
+                await Promise.all([
+                    apiHits.updateOne({ api: "/donationPausebyAdmin/:id" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
                 const id = req.params.id;
                 const result = await donationCampaingCollection.findOne({ _id: new ObjectId(id) });
                 if (result.paused) {
@@ -827,13 +1069,18 @@ async function run() {
                 }
             }
             catch (error) {
-                console.log(error);
+                errorCase("/donationPausebyAdmin/:id", req.cookies, error.message);
                 res.status(500).send("Internal Server Error!");
             }
         })
 
+
         app.patch("/donationResume/:id", verifyToken, async (req, res) => {
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/donationResume/:id" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
                 const email = jwtEmail(req.cookies);
                 const id = req.params.id;
                 const result = await donationCampaingCollection.findOne({ _id: new ObjectId(id) });
@@ -852,14 +1099,19 @@ async function run() {
                 }
             }
             catch (error) {
-                console.log(error);
+                errorCase("/donationResume/:id", req.cookies, error.message);
                 res.status(500).send("Internal Server Error!");
             }
         })
 
+
         app.get("/viewDonator/:id", verifyToken, async (req, res) => {
 
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/viewDonator/:id" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
                 const email = jwtEmail(req.cookies);
                 const id = req.params.id;
                 const result = await donationCampaingCollection.findOne({ _id: new ObjectId(id) });
@@ -868,10 +1120,12 @@ async function run() {
                     res.setHeader('Cache-Control', 'no-store').send(message);
                 }
                 else {
+                    errorCase("/rejectAdoptionReq/:id", req.cookies, error.message);
                     res.status(401).send("Unauthorize Access!");
                 }
             }
             catch (error) {
+                errorCase("/viewDonator/:id", req.cookies, error.message);
                 res.status(500).send("Internal Server Error!");
             }
         })
@@ -880,17 +1134,27 @@ async function run() {
         app.get("/myDonation", verifyToken, async (req, res) => {
 
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/myDonation" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
                 const email = jwtEmail(req.cookies);
                 const result = await donatorCollection.find({ donationCampainerEmail: email }, { projection: {} }).toArray();
                 res.send(result);
             }
             catch (error) {
+                errorCase("/myDonation", req.cookies, error.message);
                 res.status(500).send("Internal Server Error!");
             }
         })
 
+
         app.delete("/refundDonation/:id", verifyToken, async (req, res) => {
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/refundDonation/:id" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
                 const email = jwtEmail(req.cookies);
                 const id = req.params.id;
                 const result = await donatorCollection.deleteOne({ _id: new ObjectId(id), email: email });
@@ -902,13 +1166,18 @@ async function run() {
                 }
             }
             catch (error) {
-                console.log(error);
+                errorCase("/refundDonation/:id", req.cookies, error.message);
                 res.status(500).send("Internal Server Error!");
             }
         })
 
+
         app.get("/allAdoptionReq", verifyToken, async (req, res) => {
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/allAdoptionReq" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
                 const email = jwtEmail(req.cookies);
 
                 const pipeline = [
@@ -944,15 +1213,19 @@ async function run() {
                 const result = await adoptionReqCollection.aggregate(pipeline).toArray();
                 res.send(result);
             } catch (error) {
+                errorCase("/allAdoptionReq", req.cookies, error.message);
                 res.status(500).send("Internal Server Error!");
             }
         });
 
 
-
         app.patch("/acceptAdoptionReq/:petId", verifyToken, async (req, res) => {
             {
                 try {
+                    await Promise.all([
+                        apiHits.updateOne({ api: "/acceptAdoptionReq/:petId" }, { $inc: { hitCount: 1 } }),
+                        apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                    ]);
                     const email = jwtEmail(req.cookies);
                     const id = req.params.petId;
                     const adopterId = req.body.adopterId;
@@ -960,7 +1233,6 @@ async function run() {
                         return res.status(400).send("Invalid ID format");
                     }
                     const result = await petCollection.findOne({ _id: new ObjectId(id), email })
-                    console.log(result);
                     if (result?.adopted === false) {
 
                         const updatePetAdoptiation = await petCollection.updateOne({ _id: new ObjectId(id) }, { $set: { adopted: true } });
@@ -987,6 +1259,7 @@ async function run() {
                     }
                 }
                 catch (error) {
+                    errorCase("/acceptAdoptionReq/:petId", req.cookies, error.message);
                     res.status(500).send("Internal Server Error!");
                 }
             }
@@ -995,9 +1268,12 @@ async function run() {
 
         app.patch("/rejectAdoptionReq/:id", verifyToken, async (req, res) => {
             try {
+                await Promise.all([
+                    apiHits.updateOne({ api: "/rejectAdoptionReq/:id" }, { $inc: { hitCount: 1 } }),
+                    apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
+                ]);
                 const email = jwtEmail(req.cookies);
                 const id = req.params.id;
-                console.log(id);
                 if (!ObjectId.isValid(id)) {
                     return res.status(400).send("Invalid ID format");
                 }
@@ -1015,22 +1291,21 @@ async function run() {
                     }
                 }
                 else {
-
                     res.status(400).send("Bad Request");
                 }
             } catch (error) {
-                console.log(error);
+                errorCase("/rejectAdoptionReq/:id", req.cookies, error.message);
                 res.status(500).send("Internal Server Error!");
             }
         })
-
-
     }
     catch (error) {
         console.log(error);
     }
     finally { }
 }
+
+
 run().catch(console.dir);
 
 app.listen(port, () => {
