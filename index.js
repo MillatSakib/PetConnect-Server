@@ -260,11 +260,10 @@ async function run() {
                     apiHits.updateOne({ api: "/addPet" }, { $inc: { hitCount: 1 } }),
                     apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
                 ]);
-                res.send({ message: "have access" })
                 const email = jwtEmail(req.cookies);
                 const { petImgURL, petName, petAge, petCategory, petLocation, shortDescription, longDescription, time, adopted } = req.body;
                 if (!petImgURL || !petName || !petAge || !petCategory || !petLocation || !shortDescription || !longDescription || !time || !email || adopted) {
-                    return res.status(400).json({ error: 'Please fillup all the input correctly!' });
+                    return res.status(400).json({ error: 'Please fill up all the input correctly!' });
                 }
                 else {
 
@@ -279,6 +278,7 @@ async function run() {
                 }
             }
             catch (error) {
+                console.log(error);
                 errorCase("/addPet", req.cookies, error.message);
                 return res.status(500).json({ error: "Server Error" })
             }
@@ -719,23 +719,27 @@ async function run() {
                     },
                     {
                         $lookup: {
-                            from: "donationCampaign",
-                            localField: "id",
-                            foreignField: "_id",
+                            from: "donator",
+                            localField: "_id",
+                            foreignField: "id",
                             as: "campaignDetails"
                         }
                     },
                     {
-                        $unwind: "$campaignDetails"
+                        $unwind: {
+                            path: "$campaignDetails",
+                            preserveNullAndEmptyArrays: true  // Preserve documents where campaignDetails is null or an empty array
+                        }
+
                     },
                     {
                         $group: {
-                            _id: "$campaignDetails._id",
-                            totalDonation: { $sum: "$donationAmount" },
-                            maxDonation: { $max: "$donationAmount" },
-                            petName: { $first: "$campaignDetails.name" },
-                            totalAmountDonationNeed: { $first: "$campaignDetails.maxDonation" },
-                            paused: { $first: "$campaignDetails.paused" }
+                            _id: "$_id",
+                            totalDonation: { $sum: "$campaignDetails.donationAmount" },
+                            maxDonation: { $max: "$campaignDetails.donationAmount" },
+                            petName: { $first: "$name" },
+                            totalAmountDonationNeed: { $first: "$maxDonation" },
+                            paused: { $first: "$paused" }
                         }
                     },
                     {
@@ -750,7 +754,8 @@ async function run() {
                         }
                     }
                 ];
-                const result = await donatorCollection.aggregate(aggregationPipeline).toArray();
+                const result = await donationCampaingCollection.aggregate(aggregationPipeline).toArray();
+                result.map(result => result.maxDonation ? result.maxDonation = result.maxDonation : result.maxDonation = 0);
                 res.send(result);
             } catch (error) {
                 errorCase("/myAchivedDonation", req.cookies, error.message);
@@ -834,9 +839,10 @@ async function run() {
                 // Create regex for title search
                 let regex = "";
                 if (title) {
-                    const searchWord = title.toLowerCase().split(/\s+/);
+                    const searchWord = title.toLowerCase().split(/\s+/).filter(word => word !== "");
                     regex = new RegExp(searchWord.join('|'), 'i');
                 }
+
 
                 // Construct query object
                 const query = {
@@ -1144,7 +1150,37 @@ async function run() {
                     apiHits.updateOne({ api: "allApi" }, { $inc: { hitCount: 1 } })
                 ]);
                 const email = jwtEmail(req.cookies);
-                const result = await donatorCollection.find({ donationCampainerEmail: email }, { projection: {} }).toArray();
+
+
+                const aggregationPipeline = [
+                    {
+                        $match: { email: email }
+                    },
+                    {
+                        $lookup: {
+                            from: "donationCampaign",
+                            localField: "id",
+                            foreignField: "_id",
+                            as: "myDonation"
+                        }
+                    },
+                    {
+                        $unwind: {
+                            path: "$myDonation",
+                            preserveNullAndEmptyArrays: true
+                        }
+                    },
+                    {
+                        $project: {
+                            _id: 1,
+                            name: "$myDonation.name",
+                            petPicture: "$myDonation.petPicture",
+                            donationAmount: "$donationAmount",
+                            trxID: "$trxID",
+                        }
+                    }
+                ]
+                const result = await donatorCollection.aggregate(aggregationPipeline).toArray();
                 res.send(result);
             }
             catch (error) {
@@ -1191,7 +1227,7 @@ async function run() {
                     },
                     {
                         $lookup: {
-                            from: 'allPets', // Replace 'allpet' with your actual collection name
+                            from: 'allPets',
                             localField: 'petId',
                             foreignField: '_id',
                             as: 'petDetails'
@@ -1351,6 +1387,24 @@ async function run() {
             catch (error) {
                 res.status(500).send("Internal Server Error!");
             }
+        })
+
+
+        app.post("/giveDonation/:id", verifyToken, async (req, res) => {
+            const id = req.params.id;
+            const email = jwtEmail(req.cookies);
+            const query = { email: email };
+            const user = await userCollection.findOne(query);
+            const data = {
+                email: user?.email,
+                name: user?.name,
+                trxID: "BFG345435435",
+                contactNumber: req.body?.phoneNumber,
+                id: new ObjectId(id),
+                donationAmount: parseInt(req.body?.donationAmount),
+            }
+            const result = await donatorCollection.insertOne(data);
+            res.send("Donated Successfully");
         })
 
 
