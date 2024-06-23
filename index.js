@@ -10,6 +10,14 @@ const osu = require('node-os-utils');
 const cpu = osu.cpu;
 const mem = osu.mem;
 const sysOs = osu.os;
+const SSLCommerzPayment = require('sslcommerz-lts')
+
+
+
+const store_id = '<your_store_id>'
+const store_passwd = '<your_store_password>'
+const is_live = false //true for live, false for sandbox
+
 
 // middlewares
 
@@ -278,7 +286,6 @@ async function run() {
                 }
             }
             catch (error) {
-                console.log(error);
                 errorCase("/addPet", req.cookies, error.message);
                 return res.status(500).json({ error: "Server Error" })
             }
