@@ -121,6 +121,7 @@ async function run() {
         const donatorCollection = client.db("petAdoption").collection('donator');
         const apiHits = client.db("petAdoption").collection('apiHits');
         const apiError = client.db("petAdoption").collection('apiError');
+        const feedbackCollection = client.db("petAdoption").collection('feedback');
 
         const errorCase = async (apiRoute, cookie, message) => {
             const errorData = {
@@ -1412,6 +1413,35 @@ async function run() {
             }
             const result = await donatorCollection.insertOne(data);
             res.send("Donated Successfully");
+        })
+
+
+        app.post("/feedback", async (req, res) => {
+            try {
+                const { name, email, subject, phone, message } = req.body;
+                if (!name || !email || !subject || !phone || !message) {
+                    res.send("Fillup the form Correctly!");
+                }
+                else {
+                    await feedbackCollection.insertOne({ name, email, subject, phone, message });
+                    res.send("Thank you for submit Feedback");
+                }
+            }
+            catch (error) {
+                publicErrorCase("/feedback", error?.message);
+                res.status(500).send("Internal Server Error!");
+            }
+        })
+
+        app.get("/allFeedback", verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const result = await feedbackCollection.find({}).toArray();
+                res.send(result)
+            }
+            catch (error) {
+                publicErrorCase("/allFeedback", error?.message);
+                res.status(500).send("Internal Server Error!");
+            }
         })
 
 
